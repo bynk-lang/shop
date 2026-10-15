@@ -1,0 +1,218 @@
+context shop.orders
+
+consumes shop.inventory as Stock
+consumes shop.payments as Pay
+consumes bynk { Events }
+exports transparent { OrderPlaced, OrderCancelled }
+
+---
+Who is asking: the `sub` of a verified bearer token.
+---
+type CustomerId = String where NonEmpty
+
+actor Customer { auth = Bearer(secret = "AUTH_JWT_SECRET"), identity = CustomerId }
+
+---
+A customer whose token also carries the `admin` claim. Not logged in is
+`401`; logged in but not an admin is `403`.
+---
+actor Admin = Customer where hasClaim("admin")
+
+---
+Facts other contexts can react to. The ledger subscribes; orders neither knows
+nor cares who listens.
+---
+event OrderPlaced = { orderId: String, sku: String, qty: Int, cents: Int }
+
+event OrderCancelled = { orderId: String, sku: String, qty: Int, cents: Int }
+
+---
+Where an order is in its life. A new order is `Pending`; `open` moves it to
+`Opened` while the stock and the payment are being settled, and exactly one of
+`confirm` or `reject` then decides it. Only a `Placed` order can be cancelled.
+---
+type Status = enum { Pending, Opened, Placed, Rejected, Cancelled }
+
+---
+Why a placement or cancellation was refused.
+---
+type OrderError = enum { OutOfStock, PaymentDeclined, AlreadyDecided, NotPlaced }
+
+---
+One order, keyed by the id the customer chose, so placing the same id twice
+cannot place it twice. The agent owns the order's state and the rules for
+moving it; it calls no other context. The `api` service below coordinates the
+inventory, the payment and the events, because those are cross-context calls.
+---
+agent Order {
+	key id: String
+
+	store status: Cell[Status] = Pending
+	store owner: Cell[String]
+	store sku: Cell[String]
+	store qty: Cell[Int]
+	store cents: Cell[Int]
+
+	on call open(
+		who: String,
+		item: String,
+		count: Int,
+		price: Int
+	) -> Effect[Result[(), OrderError]] {
+		match status {
+			Pending => {
+				owner := who
+				sku := item
+				qty := count
+				cents := price
+				status := Opened
+				Ok(())
+			},
+			_ => Err(AlreadyDecided),
+		}
+	}
+
+	on call confirm() -> Effect[()] {
+		status := Placed
+	}
+
+	on call reject() -> Effect[()] {
+		status := Rejected
+	}
+
+	on call cancel() -> Effect[Result[(), OrderError]] {
+		match status {
+			Placed => {
+				status := Cancelled
+				Ok(())
+			},
+			_ => Err(NotPlaced),
+		}
+	}
+
+	on call view() -> Effect[OrderView] {
+		OrderView { id: "", status: name(status), owner: owner, sku: sku, qty: qty, cents: cents }
+	}
+}
+
+type OrderView = { id: String, status: String, owner: String, sku: String, qty: Int, cents: Int }
+
+type PlaceRequest = { sku: String, qty: Int, cents: Int }
+
+type StockRequest = { qty: Int }
+
+fn name(s: Status) -> String {
+	match s {
+		Pending => "pending",
+		Opened => "opened",
+		Placed => "placed",
+		Rejected => "rejected",
+		Cancelled => "cancelled",
+	}
+}
+
+service api from http {
+	on PUT("/orders/:id") (
+		id: String,
+		body: PlaceRequest
+	) -> Effect[HttpResult[OrderView]] by c: Customer given Events {
+		let opened <- Order(id).open(c.identity, body.sku, body.qty, body.cents)
+		match opened {
+			Err(_) => Conflict("order already decided"),
+			Ok(_) => {
+				let held <- Stock.reserve(body.sku, body.qty)
+				match held {
+					Err(_) => {
+						let _ <- Order(id).reject()
+						Conflict("out of stock")
+					},
+					Ok(_) => {
+						let paid <- Pay.authorise(body.cents)
+						match paid {
+							Err(_) => {
+								let _ <- Stock.release(body.sku, body.qty)
+								let _ <- Order(id).reject()
+								UnprocessableEntity("payment declined")
+							},
+							Ok(_) => {
+								let _ <- Order(id).confirm()
+								let _ <- Events.emit[OrderPlaced](OrderPlaced {
+									orderId: id,
+									sku: body.sku,
+									qty: body.qty,
+									cents: body.cents,
+								})
+								let v <- Order(id).view()
+								Created(OrderView {
+									id: id,
+									status: v.status,
+									owner: v.owner,
+									sku: v.sku,
+									qty: v.qty,
+									cents: v.cents,
+								})
+							},
+						}
+					},
+				}
+			},
+		}
+	}
+
+	on GET("/orders/:id") (id: String) -> Effect[HttpResult[OrderView]] by c: Customer {
+		let v <- Order(id).view()
+		if v.owner == c.identity {
+			Ok(OrderView {
+				id: id,
+				status: v.status,
+				owner: v.owner,
+				sku: v.sku,
+				qty: v.qty,
+				cents: v.cents,
+			})
+		} else {
+			NotFound
+		}
+	}
+
+	on POST("/orders/:id/cancel") (
+		id: String
+	) -> Effect[HttpResult[OrderView]] by c: Customer given Events {
+		let v <- Order(id).view()
+		if v.owner != c.identity {
+			NotFound
+		} else {
+			let r <- Order(id).cancel()
+			match r {
+				Err(_) => Conflict("only a placed order can be cancelled"),
+				Ok(_) => {
+					let _ <- Stock.release(v.sku, v.qty)
+					let _ <- Events.emit[OrderCancelled](OrderCancelled {
+						orderId: id,
+						sku: v.sku,
+						qty: v.qty,
+						cents: v.cents,
+					})
+					Ok(OrderView {
+						id: id,
+						status: "cancelled",
+						owner: v.owner,
+						sku: v.sku,
+						qty: v.qty,
+						cents: v.cents,
+					})
+				},
+			}
+		}
+	}
+
+	on PUT("/stock/:sku") (sku: String, body: StockRequest) -> Effect[HttpResult[Int]] by a: Admin {
+		let level <- Stock.restock(sku, body.qty)
+		Ok(level)
+	}
+
+	on GET("/stock/:sku") (sku: String) -> Effect[HttpResult[Int]] by a: Admin {
+		let level <- Stock.level(sku)
+		Ok(level)
+	}
+}

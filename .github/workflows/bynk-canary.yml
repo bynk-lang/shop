@@ -45,4 +45,6 @@ jobs:
       upstream-result: ${{ needs.e2e.result }}
       kind: example
       source: .
-      deploy-dry-run: true
+      # Off until accuser/bynk#1961 is fixed: `bynk deploy` rejects the
+      # events from orders to the ledger as a Service Binding cycle.
+      deploy-dry-run: false

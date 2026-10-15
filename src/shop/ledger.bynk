@@ -1,0 +1,74 @@
+context shop.ledger
+
+consumes shop.orders
+consumes bynk { Idempotency }
+
+type StaffId = String where NonEmpty
+
+actor Staff { auth = Bearer(secret = "AUTH_JWT_SECRET"), identity = StaffId }
+
+actor Admin = Staff where hasClaim("admin")
+
+type Totals = { orders: Int, units: Int, cents: Int }
+
+---
+The books: how many orders are standing, and for how much. One instance, since
+the totals are one number each.
+
+Events are delivered at least once, so each handler asks `Idempotency` whether
+it has seen this event id before it counts it again.
+---
+agent Books {
+	key id: String
+
+	store orders: Cell[Int]
+	store units: Cell[Int]
+	store cents: Cell[Int]
+
+	on call placed(qty: Int, price: Int) -> Effect[()] {
+		let _ <- orders.update((v) => v + 1)
+		let _ <- units.update((v) => v + qty)
+		let _ <- cents.update((v) => v + price)
+	}
+
+	on call cancelled(qty: Int, price: Int) -> Effect[()] {
+		let _ <- orders.update((v) => v - 1)
+		let _ <- units.update((v) => v - qty)
+		let _ <- cents.update((v) => v - price)
+	}
+
+	on call totals() -> Effect[Totals] { Totals { orders: orders, units: units, cents: cents } }
+}
+
+service OnPlaced from Events(OrderPlaced) {
+	on event(e: OrderPlaced, env: EventEnvelope) -> Effect[()] given Idempotency {
+		let seen <- Idempotency.dedup[()](env.eventId)
+		match seen {
+			Some(_) => (),
+			None => {
+				let _ <- Books("main").placed(e.qty, e.cents)
+				let _ <- Idempotency.remember[()](env.eventId, (), 7.days)
+			},
+		}
+	}
+}
+
+service OnCancelled from Events(OrderCancelled) {
+	on event(e: OrderCancelled, env: EventEnvelope) -> Effect[()] given Idempotency {
+		let seen <- Idempotency.dedup[()](env.eventId)
+		match seen {
+			Some(_) => (),
+			None => {
+				let _ <- Books("main").cancelled(e.qty, e.cents)
+				let _ <- Idempotency.remember[()](env.eventId, (), 7.days)
+			},
+		}
+	}
+}
+
+service api from http {
+	on GET("/totals") () -> Effect[HttpResult[Totals]] by a: Admin {
+		let t <- Books("main").totals()
+		Ok(t)
+	}
+}

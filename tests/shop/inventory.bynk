@@ -1,0 +1,31 @@
+suite shop.inventory
+case "stock starts at zero and restocking adds to it" {
+	let before <- Inventory("w1").level()
+	expect before == 0
+	let after <- Inventory("w1").restock(10)
+	expect after == 10
+}
+
+case "a reservation takes stock, a release puts it back" {
+	let _ <- Inventory("w2").restock(10)
+	let held <- Inventory("w2").reserve(3)
+	expect held is Ok(_)
+	let mid <- Inventory("w2").level()
+	expect mid == 7
+	let back <- Inventory("w2").release(3)
+	expect back == 10
+}
+
+case "reserving more than is available is refused and takes nothing" {
+	let _ <- Inventory("w3").restock(2)
+	let held <- Inventory("w3").reserve(3)
+	expect held is Err(_)
+	let left <- Inventory("w3").level()
+	expect left == 2
+}
+
+case "each sku has its own stock" {
+	let _ <- Inventory("a").restock(5)
+	let other <- Inventory("b").level()
+	expect other == 0
+}
