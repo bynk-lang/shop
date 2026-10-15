@@ -1,0 +1,5 @@
+suite example.count
+case "a counter counts up from zero" {
+	expect next(0) == 1
+	expect next(41) == 42
+}

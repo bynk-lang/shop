@@ -1,0 +1,37 @@
+context example.app
+
+uses example.count
+
+---
+Which counter: a non-empty name. Each distinct `CounterName` keys its own
+[Counter] instance (a Cloudflare Durable Object).
+---
+type CounterName = String where NonEmpty
+
+---
+A named counter. State is one number, zero until the first hit.
+---
+agent Counter {
+	key name: CounterName
+
+	store value: Cell[Int]
+
+	on call hit() -> Effect[Int] {
+		let _ <- value.update((v) => next(v))
+		value
+	}
+
+	on call read() -> Effect[Int] { value }
+}
+
+service api from http {
+	on POST("/counters/:name/hit") (name: CounterName) -> Effect[HttpResult[Int]] by Visitor {
+		let n <- Counter(name).hit()
+		Created(n)
+	}
+
+	on GET("/counters/:name") (name: CounterName) -> Effect[HttpResult[Int]] by Visitor {
+		let n <- Counter(name).read()
+		Ok(n)
+	}
+}

@@ -1,0 +1,41 @@
+# End-to-end checks: serve the app with `bynk dev` and run e2e/scenarios.sh
+# against it.
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Bynk version to test, exact or "latest" (empty for the pinned baseline)
+        type: string
+        default: ""
+  # bynk-canary.yml calls this at each new Bynk release, so the scenarios
+  # also run against releases newer than the baseline.
+  workflow_call:
+    inputs:
+      version:
+        description: Bynk version to test, exact or "latest" (empty for the pinned baseline)
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  scenarios:
+    name: Scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: bynk-lang/bynk-dev@v1
+        with:
+          # Pushes and pull requests use the pinned baseline, so a red build
+          # means your change broke it. Bump it deliberately; the canary
+          # passes newer releases in.
+          version: ${{ inputs.version || '0.330.4' }}
+          run: ./e2e/scenarios.sh

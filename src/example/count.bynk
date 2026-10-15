@@ -1,0 +1,7 @@
+commons example.count
+
+---
+The next value of a counter. Pure, so it is unit-tested without an agent or a
+platform binding.
+---
+fn next(current: Int) -> Int { current + 1 }

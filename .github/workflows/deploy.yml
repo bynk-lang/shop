@@ -1,0 +1,82 @@
+# Deploy this app to Cloudflare Workers with bynk-deploy.
+#
+# Pull requests get an offline dry run (the plan, no credentials). A push to
+# main deploys for real, once these repository secrets exist:
+#   CLOUDFLARE_API_TOKEN   a Cloudflare API token with Workers deploy scope
+#   CLOUDFLARE_ACCOUNT_ID  the Cloudflare account ID
+# Until they do, the deploy job warns and skips rather than failing main.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  BYNK_VERSION: 0.330.4
+
+jobs:
+  plan:
+    name: Plan (dry run)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: bynk-lang/bynk-deploy@v2
+        with:
+          version: ${{ env.BYNK_VERSION }}
+          dry-run: "true"
+          plan-format: text
+
+  deploy:
+    name: Deploy
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the deploy secrets
+        id: secrets
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=""
+          [ -n "$TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$ACCOUNT" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::warning::Not deploying: set the repository secret(s)${missing} (see README.md)"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy
+        id: deploy
+        if: steps.secrets.outputs.configured == 'true'
+        uses: bynk-lang/bynk-deploy@v2
+        with:
+          version: ${{ env.BYNK_VERSION }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # The action never commits. When the deploy changes bynk.deploy.lock (the
+      # first deploy records the context), keep the new file to commit.
+      - name: Keep the changed bynk.deploy.lock
+        if: always() && steps.deploy.outputs.lock-changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: bynk.deploy.lock
+          path: bynk.deploy.lock

@@ -1,0 +1,48 @@
+# Bynk canary: re-run this repository's checks against a new Bynk release, and
+# keep a `canary` issue open while they fail.
+#
+# Triggered by the org dispatcher in bynk-lang/.github (on each Bynk release,
+# and weekly), which is why there is no `schedule` here. To take part, this
+# repository must be listed in bynk-lang/.github's canary/repos.json and have
+# the canary GitHub App installed. See README.md ("Enrol in the canary") and
+# https://github.com/bynk-lang/.github/blob/main/canary/README.md
+#
+# `e2e` runs the end-to-end scenarios at the dispatched version. canary.yml
+# runs the format check, type check, tests and a deploy dry run itself, and
+# takes the e2e result as `upstream-result`, so a break in any of them opens
+# or updates the one `canary` issue.
+name: Bynk canary
+
+on:
+  repository_dispatch:
+    types: [bynk-canary]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Bynk version, exact ("0.330.4") or "latest"
+        type: string
+        default: latest
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write   # canary.yml reports with the run's GitHub OIDC token
+
+jobs:
+  e2e:
+    name: E2E
+    uses: ./.github/workflows/e2e.yml
+    with:
+      version: ${{ github.event.client_payload.version || inputs.version || 'latest' }}
+
+  canary:
+    name: Canary
+    needs: e2e
+    if: ${{ !cancelled() }}
+    uses: bynk-lang/.github/.github/workflows/canary.yml@v1
+    with:
+      version: ${{ github.event.client_payload.version || inputs.version || 'latest' }}
+      upstream-result: ${{ needs.e2e.result }}
+      kind: example
+      source: .
+      deploy-dry-run: true

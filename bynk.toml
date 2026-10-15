@@ -1,0 +1,4 @@
+# Bynk project manifest. Rename the project when you use this template.
+[project]
+name = "example"
+version = "0.1.0"
