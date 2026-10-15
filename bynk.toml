@@ -1,4 +1,4 @@
-# Bynk project manifest. Rename the project when you use this template.
+# Bynk project manifest. A multi-context shop.
 [project]
-name = "example"
+name = "shop"
 version = "0.1.0"

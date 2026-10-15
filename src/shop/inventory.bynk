@@ -1,0 +1,71 @@
+context shop.inventory
+
+exports transparent { StockError }
+
+---
+Why a reservation was refused.
+---
+type StockError = enum { Insufficient }
+
+---
+The stock of one product. Each `sku` keys its own `Inventory` instance (a
+Cloudflare Durable Object), so products never contend with each other.
+
+The invariant is the contract: whatever the handlers do, stock never goes
+negative. `reserve` guards for it, and the invariant makes a future handler
+that forgets to fail at the commit point instead of persisting a negative
+balance.
+---
+agent Inventory {
+	key sku: String
+
+	store available: Cell[Int]
+
+	invariant available_non_negative:
+		available >= 0
+
+	on call restock(qty: Int) -> Effect[Int] {
+		let _ <- available.update((v) => v + qty)
+		available
+	}
+
+	on call reserve(qty: Int) -> Effect[Result[(), StockError]] {
+		if available < qty {
+			Err(Insufficient)
+		} else {
+			let _ <- available.update((v) => v - qty)
+			Ok(())
+		}
+	}
+
+	on call release(qty: Int) -> Effect[Int] {
+		let _ <- available.update((v) => v + qty)
+		available
+	}
+
+	on call level() -> Effect[Int] { available }
+}
+
+---
+The calls other contexts can make. `by c: Caller` is the calling context's
+name, stamped by the compiler at the call site and carried over the Service
+Binding, so a handler can tell who is asking. Nothing outside the system can
+reach these: a Service Binding is an internal channel.
+---
+service restock {
+	on call(sku: String, qty: Int) -> Effect[Int] by c: Caller { Inventory(sku).restock(qty) }
+}
+
+service reserve {
+	on call(sku: String, qty: Int) -> Effect[Result[(), StockError]] by c: Caller {
+		Inventory(sku).reserve(qty)
+	}
+}
+
+service release {
+	on call(sku: String, qty: Int) -> Effect[Int] by c: Caller { Inventory(sku).release(qty) }
+}
+
+service level {
+	on call(sku: String) -> Effect[Int] by c: Caller { Inventory(sku).level() }
+}

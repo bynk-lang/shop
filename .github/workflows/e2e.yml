@@ -1,5 +1,5 @@
-# End-to-end checks: serve the app with `bynk dev` and run e2e/scenarios.sh
-# against it.
+# End-to-end checks: serve the four contexts with `bynk dev` and run
+# e2e/scenarios.sh against them.
 name: E2E
 
 on:
@@ -28,6 +28,10 @@ jobs:
   scenarios:
     name: Scenarios
     runs-on: ubuntu-latest
+    env:
+      # Not a secret: a throwaway key for a server that only exists for this
+      # job. The scenarios sign their own tokens with it.
+      AUTH_JWT_SECRET: e2e-only-not-a-secret
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,4 +42,5 @@ jobs:
           # means your change broke it. Bump it deliberately; the canary
           # passes newer releases in.
           version: ${{ inputs.version || '0.330.4' }}
+          wrangler-args: --var AUTH_JWT_SECRET:${{ env.AUTH_JWT_SECRET }}
           run: ./e2e/scenarios.sh

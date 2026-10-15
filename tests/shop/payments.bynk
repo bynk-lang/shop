@@ -1,0 +1,15 @@
+suite shop.payments
+case "a charge within the limit is approved" {
+	let r <- authorise.call(2500)
+	expect r is Ok(_)
+}
+
+case "a charge over 1,000.00 is declined" {
+	let r <- authorise.call(100001)
+	expect r is Err(_)
+}
+
+case "the limit itself is approved" {
+	let r <- authorise.call(100000)
+	expect r is Ok(_)
+}

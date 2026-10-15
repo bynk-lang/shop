@@ -1,0 +1,34 @@
+context shop.payments
+
+exports transparent { PayError }
+
+---
+Why a charge was refused.
+---
+type PayError = enum { Declined }
+
+---
+The card processor. A capability is an interface the context's handlers use
+without knowing what provides it, so a test can swap the provider and a
+deployment can bind a real one.
+---
+capability Processor {
+	fn charge(cents: Int) -> Effect[Result[Int, PayError]]
+}
+
+---
+A stand-in processor with one rule: charges over 1,000.00 are declined. Its
+approval number is the amount, which is enough to check the value arrives.
+---
+provides Processor = FakeProcessor {
+	fn charge(cents: Int) -> Effect[Result[Int, PayError]] {
+		if cents > 100000 { Err(Declined) } else { Ok(cents) }
+	}
+}
+
+service authorise {
+	on call(cents: Int) -> Effect[Result[Int, PayError]] given Processor {
+		let r <- Processor.charge(cents)
+		r
+	}
+}

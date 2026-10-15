@@ -1,100 +1,115 @@
-# example-template
+# shop
 
-A template for a Bynk example app in the `bynk-lang` org: a small working
-service wired to the org's CI, end-to-end checks, deploy and
-[canary](https://github.com/bynk-lang/.github/blob/main/canary/README.md), so a
-new example starts with all of that and only needs its own code.
+A small online shop in Bynk, split into four bounded contexts that talk over
+Service Bindings and events. It is a showcase and a test: the
+[org canary](https://github.com/bynk-lang/.github/blob/main/canary/README.md)
+re-runs its checks, including end-to-end scenarios against the running Workers,
+on every new Bynk release.
 
-Click **Use this template** to start one.
+## The shape
 
-## What you get
-
-```text
-bynk.toml                       project manifest (rename the project)
-src/example/count.bynk          commons: a pure function, unit-tested
-src/example/app.bynk            context: an agent (a Durable Object) behind an HTTP service
-tests/example/count.bynk        the unit test
-e2e/scenarios.sh                end-to-end scenarios, run against the served app
-.github/workflows/
-  ci.yml                        format check, type check, tests (bynk-ci)
-  e2e.yml                       serves the app with `bynk dev`, runs e2e/scenarios.sh (bynk-dev)
-  bynk-canary.yml               re-runs all of it against each new Bynk release
-  deploy.yml                    dry run on pull requests, deploy to Cloudflare on main
-.github/dependabot.yml          keeps the actions current
+```mermaid
+flowchart LR
+  customer(["customer / admin<br/>(bearer token)"]) -- HTTP --> orders
+  orders["<b>shop.orders</b><br/>Order agent: a state machine<br/>HTTP API"] -- "reserve / release / restock / level<br/>(Service Binding)" --> inventory["<b>shop.inventory</b><br/>Inventory agent<br/>invariant: stock >= 0"]
+  orders -- "authorise<br/>(Service Binding)" --> payments["<b>shop.payments</b><br/>Processor capability<br/>fake provider"]
+  orders -. "OrderPlaced / OrderCancelled<br/>(events)" .-> ledger["<b>shop.ledger</b><br/>Books agent<br/>idempotent subscribers"]
 ```
 
-The app counts: `POST /counters/:name/hit` adds one and returns the new count,
-and `GET /counters/:name` reads it. Replace it with your own.
+| Context | Shows | Source |
+| --- | --- | --- |
+| `shop.orders` | an agent as a **state machine** (`Pending → Opened → Placed / Rejected → Cancelled`); a service that coordinates other contexts; **authentication and authorisation** (a `Customer`, and an `Admin` refined by a token claim: `401` vs `403`); emitting **events** | [`orders.bynk`](src/shop/orders.bynk) |
+| `shop.inventory` | an agent with an **invariant** (`available >= 0`) enforced at every commit; `on call` services with the **`Caller`** identity | [`inventory.bynk`](src/shop/inventory.bynk) |
+| `shop.payments` | a **capability** (`Processor`) with a provider (`FakeProcessor`), the seam a real processor would fill | [`payments.bynk`](src/shop/payments.bynk) |
+| `shop.ledger` | **event subscribers** (`from Events(…)`), made safe for at-least-once delivery with `Idempotency` | [`ledger.bynk`](src/shop/ledger.bynk) |
 
-## Make it yours
+The agent owns an order's state and the rules for moving it. The service around
+it does the cross-context work: reserve stock, take payment, release the stock
+again if the payment is declined, emit the event.
 
-1. **Rename.** Change `name` in `bynk.toml`, and the `example` context and
-   commons names under `src/` and `tests/`. Keep the layout: contexts and
-   commons in `src/`, suites in `tests/`.
-2. **Write the app**, then update the unit tests and `e2e/scenarios.sh` to
-   match. Assert on what a caller sees: status codes, bodies, and state kept
-   between requests. The unit tests cover the pure logic; the scenarios cover
-   the wiring.
-3. **Check it** before you push:
+## The API
 
-   ```sh
-   bynkc fmt --check . && bynkc check . && bynkc test .
-   bynk dev                              # then try it in a browser or with curl
-   ```
+Every route but the stock ones needs a bearer token (HS256, signed with
+`AUTH_JWT_SECRET`) whose `sub` is the caller. The stock routes and the ledger
+need a token with an `admin` claim.
 
-   To run the scenarios the way CI does, serve the app and run the script with
-   `BYNK_DEV_URL` set, or push and let `e2e.yml` do it.
-4. **Describe it.** Replace this README: what the app shows off, its routes,
-   how to run it, and any limits from Bynk today.
+| Route | Who | What |
+| --- | --- | --- |
+| `PUT /orders/:id` | customer | Place order `:id`: `{"sku":"widget","qty":3,"cents":2500}`. `201` placed, `409` out of stock or already decided, `422` payment declined. The id is the customer's, so placing it twice cannot place it twice. |
+| `GET /orders/:id` | the order's customer | The order. Someone else's is a `404`. |
+| `POST /orders/:id/cancel` | the order's customer | Cancel a placed order and return its stock. |
+| `PUT /stock/:sku` | admin | Add `{"qty":10}` to a product's stock. |
+| `GET /stock/:sku` | admin | A product's stock. |
+| `GET /totals` (on `shop.ledger`) | admin | Standing orders, units and cents, as the ledger saw them in events. |
 
-## Enrol in the canary
+Payments over 1,000.00 (`cents > 100000`) are declined by the fake processor.
 
-The canary re-runs a repository's checks against every new Bynk release and
-opens a `canary` issue here when one breaks it. To take part:
-
-1. **Set the workflow.** `bynk-canary.yml` is already here. Check `kind`
-   (`example`), `source` and `deploy-dry-run` suit your app. It must be on the
-   default branch, because `repository_dispatch` runs nothing else.
-2. **Register the repository.** Add an entry to
-   [`canary/repos.json`](https://github.com/bynk-lang/.github/blob/main/canary/repos.json)
-   in `bynk-lang/.github`, in a pull request:
-
-   ```json
-   { "repo": "bynk-lang/your-example", "kind": "example", "description": "What it shows off" }
-   ```
-
-3. **Install the canary App** on the repository (org settings → GitHub Apps →
-   the canary App → Configure → Repository access).
-
-Then dispatch it once by hand and check a run appears in this repository's
-Actions tab:
+## Run it
 
 ```sh
-gh workflow run dispatch-canary.yml -R bynk-lang/.github -f repos=bynk-lang/your-example
+bynkc test .                                       # unit tests
+bynk dev -- --var AUTH_JWT_SECRET:dev-secret       # all four contexts, wired
 ```
 
-### Baseline and canary versions
+`bynk dev` prints each context's port. They are assigned in name order, so
+`shop-inventory` is first and `shop-orders` is on the third.
 
-`ci.yml`, `e2e.yml` and `deploy.yml` pin a Bynk version (`0.330.4`), so a red
-build on a push or pull request means your change broke something, not that a
-new compiler came out. The canary passes the newer release in. When the canary
-shows the app works with a newer version, bump the pins together, in one pull
-request.
+## Tests
 
-## Deploy
+- **Unit tests** ([`tests/shop`](tests/shop)) drive the agents and the payment
+  rule directly: stock arithmetic and the refusal that keeps it non-negative,
+  every transition of the order's state machine, and the processor's limit.
+- **End-to-end scenarios** ([`e2e/scenarios.sh`](e2e/scenarios.sh)) run against
+  the four Workers served by `bynk dev`, through
+  [`bynk-dev`](https://github.com/bynk-lang/bynk-dev). They place, refuse,
+  decline and cancel orders and check the stock after each; check that
+  authentication fails as `401` and authorisation as `403`; and poll the ledger
+  until its events have been counted.
 
-[`deploy.yml`](.github/workflows/deploy.yml) does an offline dry run on every
-pull request, and deploys on every push to `main` once these repository secrets
-exist (until then it warns and skips):
+  ```sh
+  AUTH_JWT_SECRET=dev-secret bynk dev -- --var AUTH_JWT_SECRET:dev-secret &
+  AUTH_JWT_SECRET=dev-secret \
+  BYNK_DEV_URL_SHOP_ORDERS=http://localhost:8789 BYNK_DEV_URL_SHOP_LEDGER=http://localhost:8788 \
+    ./e2e/scenarios.sh
+  ```
+
+CI runs both on every push and pull request at a pinned Bynk version
+(`0.330.4`), so a red build means a change broke something. The canary runs
+them at each new release; when a release breaks the shop it opens a `canary`
+issue here.
+
+## What Bynk can't do for this yet
+
+Where this example works around the language, or the toolchain falls short, it
+is written down here rather than hidden:
+
+- **An agent can't call another context.** The `Order` agent would naturally
+  call the inventory itself, but that faults at runtime
+  ([accuser/bynk#1960](https://github.com/accuser/bynk/issues/1960)), so the
+  `api` service does the cross-context calls and the agent keeps to its own
+  state.
+- **Events and `bynk deploy` don't compose.** Orders emit to the ledger, and a
+  subscriber must consume the emitter, so the generated Service Bindings form a
+  cycle and the deploy is refused
+  ([accuser/bynk#1961](https://github.com/accuser/bynk/issues/1961)). Until it
+  is fixed, [`deploy.yml`](.github/workflows/deploy.yml) is manual and the
+  canary skips its deploy dry run.
+- **No `system`-tier test of the whole flow.** `bynkc test`'s `system` tier
+  stands the contexts up in process, but only `on call` services are
+  addressable, and it wires no event fan-out
+  ([accuser/bynk#1959](https://github.com/accuser/bynk/issues/1959)). The
+  end-to-end scenarios cover the flow against the real Workers instead.
+
+## Deploying
+
+Not yet; see above. When it works, [`deploy.yml`](.github/workflows/deploy.yml)
+needs these repository secrets:
 
 | Secret | Value |
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | A Cloudflare API token with Workers deploy scope. |
 | `CLOUDFLARE_ACCOUNT_ID` | The Cloudflare account ID. |
-
-**After the first deploy,** `bynk.deploy.lock` changes, because it records what
-was deployed. The action never commits, so the workflow uploads the new lock as
-an artifact named `bynk.deploy.lock`. Commit it.
+| `AUTH_JWT_SECRET` | The key tokens are verified with. |
 
 ## License
 

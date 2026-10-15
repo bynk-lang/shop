@@ -1,16 +1,20 @@
-# Deploy this app to Cloudflare Workers with bynk-deploy.
+# Deploy the shop to Cloudflare Workers with bynk-deploy.
 #
-# Pull requests get an offline dry run (the plan, no credentials). A push to
-# main deploys for real, once these repository secrets exist:
+# MANUAL ONLY until accuser/bynk#1961 is fixed: `bynk deploy` rejects the
+# events from orders to the ledger as a Service Binding cycle, so a dry run on
+# every pull request and a deploy on every push would both fail. Restore the
+# `push` and `pull_request` triggers when it is.
+#
+# When enabled, pull requests get an offline dry run (the plan, no
+# credentials) and a push to main deploys for real, once these repository
+# secrets exist:
 #   CLOUDFLARE_API_TOKEN   a Cloudflare API token with Workers deploy scope
 #   CLOUDFLARE_ACCOUNT_ID  the Cloudflare account ID
+#   AUTH_JWT_SECRET        the key the Customer and Admin actors verify tokens with
 # Until they do, the deploy job warns and skips rather than failing main.
 name: Deploy
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -52,10 +56,12 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          JWT: ${{ secrets.AUTH_JWT_SECRET }}
         run: |
           missing=""
           [ -n "$TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
           [ -n "$ACCOUNT" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$JWT" ] || missing="$missing AUTH_JWT_SECRET"
           if [ -n "$missing" ]; then
             echo "::warning::Not deploying: set the repository secret(s)${missing} (see README.md)"
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -71,6 +77,9 @@ jobs:
           version: ${{ env.BYNK_VERSION }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Set on every deployed context; the Customer and Admin actors read it.
+          secrets: |
+            AUTH_JWT_SECRET=${{ secrets.AUTH_JWT_SECRET }}
 
       # The action never commits. When the deploy changes bynk.deploy.lock (the
       # first deploy records the context), keep the new file to commit.

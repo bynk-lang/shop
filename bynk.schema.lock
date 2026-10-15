@@ -1,3 +1,47 @@
 version = 1
 
-[events]
+[events."shop.orders.OrderCancelled"]
+schema = 1
+
+[[events."shop.orders.OrderCancelled".fields]]
+name = "cents"
+type = "Int"
+default = false
+
+[[events."shop.orders.OrderCancelled".fields]]
+name = "orderId"
+type = "String"
+default = false
+
+[[events."shop.orders.OrderCancelled".fields]]
+name = "qty"
+type = "Int"
+default = false
+
+[[events."shop.orders.OrderCancelled".fields]]
+name = "sku"
+type = "String"
+default = false
+
+[events."shop.orders.OrderPlaced"]
+schema = 1
+
+[[events."shop.orders.OrderPlaced".fields]]
+name = "cents"
+type = "Int"
+default = false
+
+[[events."shop.orders.OrderPlaced".fields]]
+name = "orderId"
+type = "String"
+default = false
+
+[[events."shop.orders.OrderPlaced".fields]]
+name = "qty"
+type = "Int"
+default = false
+
+[[events."shop.orders.OrderPlaced".fields]]
+name = "sku"
+type = "String"
+default = false
