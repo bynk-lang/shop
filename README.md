@@ -169,6 +169,17 @@ is written down here rather than hidden:
   ([accuser/bynk#1982](https://github.com/accuser/bynk/issues/1982)). The
   inventory's holds and the catalogue are keyed by text (`orderRef`,
   `skuRef` in `shop.values`) and keep the opaque value inside the entry.
+- **Three smaller workarounds in the tests and the sweep.** Each passes
+  `bynkc check` and then fails, so the shop does it the other way:
+  - A test that calls a `by c: Caller` service must say who is calling
+    (`… by Caller("shop.orders")`); leaving it out fails `tsc` instead of being
+    reported ([accuser/bynk#1978](https://github.com/accuser/bynk/issues/1978)).
+  - A test compares a result with `expect r is Ok("…")`, because
+    `expect r == Ok("…")` is type-checked against the case's own result type
+    ([accuser/bynk#1979](https://github.com/accuser/bynk/issues/1979)).
+  - `releaseStale` projects each map entry into a `Stale` record before
+    collecting it, because folding a `List[MapEntry]` emits an unimported type
+    ([accuser/bynk#1977](https://github.com/accuser/bynk/issues/1977)).
 - **One provider per capability.** There is no way to pick a provider per
   environment, so `CardProcessor` reads `PAYMENTS_PROCESSOR` and chooses at
   run time. The fake is a pure function rather than a provider of its own.
@@ -195,6 +206,12 @@ needs these repository secrets:
 
 Leave `PAYMENTS_PROCESSOR` unset in a deployment, so the real processor is
 used. Set `PAYMENTS_API_URL` to point the gateway at a sandbox.
+
+`bynk deploy` won't warn if a payments secret is missing. Its list of the
+secrets each Worker reads leaves out `PAYMENTS_PROCESSOR` (read in a provider)
+and the gateway binding's `PAYMENTS_API_KEY` and `PAYMENTS_API_URL`, yet claims
+to be complete ([accuser/bynk#1976](https://github.com/accuser/bynk/issues/1976)).
+`deploy.yml` checks the two required ones itself.
 
 ## License
 
