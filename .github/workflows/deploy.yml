@@ -11,6 +11,9 @@
 #   CLOUDFLARE_API_TOKEN   a Cloudflare API token with Workers deploy scope
 #   CLOUDFLARE_ACCOUNT_ID  the Cloudflare account ID
 #   AUTH_JWT_SECRET        the key the Customer and Admin actors verify tokens with
+#   PAYMENTS_API_KEY       the payment processor's API key, for the gateway adapter
+#   PAYMENTS_WEBHOOK_SECRET the key the processor signs its webhooks with
+# PAYMENTS_API_URL is optional: set it to point the gateway at a sandbox.
 # Until they do, the deploy job warns and skips rather than failing main.
 name: Deploy
 
@@ -57,11 +60,15 @@ jobs:
           TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           JWT: ${{ secrets.AUTH_JWT_SECRET }}
+          PAY_KEY: ${{ secrets.PAYMENTS_API_KEY }}
+          PAY_HOOK: ${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
         run: |
           missing=""
           [ -n "$TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
           [ -n "$ACCOUNT" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
           [ -n "$JWT" ] || missing="$missing AUTH_JWT_SECRET"
+          [ -n "$PAY_KEY" ] || missing="$missing PAYMENTS_API_KEY"
+          [ -n "$PAY_HOOK" ] || missing="$missing PAYMENTS_WEBHOOK_SECRET"
           if [ -n "$missing" ]; then
             echo "::warning::Not deploying: set the repository secret(s)${missing} (see README.md)"
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -77,9 +84,13 @@ jobs:
           version: ${{ env.BYNK_VERSION }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Set on every deployed context; the Customer and Admin actors read it.
+          # Set on every deployed context. The Customer and Admin actors read
+          # AUTH_JWT_SECRET; the payments context reads the rest. Leaving
+          # PAYMENTS_PROCESSOR unset is what selects the real processor.
           secrets: |
             AUTH_JWT_SECRET=${{ secrets.AUTH_JWT_SECRET }}
+            PAYMENTS_API_KEY=${{ secrets.PAYMENTS_API_KEY }}
+            PAYMENTS_WEBHOOK_SECRET=${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
 
       # The action never commits. When the deploy changes bynk.deploy.lock (the
       # first deploy records the context), keep the new file to commit.

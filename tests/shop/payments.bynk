@@ -1,15 +1,105 @@
 suite shop.payments
+-- The fake processor: what `bynk dev` and the end-to-end scenarios run with.
+
 case "a charge within the limit is approved" {
-	let r <- authorise.call(2500)
-	expect r is Ok(_)
+	stub Secrets.get("PAYMENTS_PROCESSOR") returns Some("fake")
+	let r <- authorise.call("o1", 2500) by Caller("shop.orders")
+	expect r is Ok("fake_o1")
+	expect Gateway.authorise never called
 }
 
 case "a charge over 1,000.00 is declined" {
-	let r <- authorise.call(100001)
-	expect r is Err(_)
+	stub Secrets.get("PAYMENTS_PROCESSOR") returns Some("fake")
+	let r <- authorise.call("o1", 100001) by Caller("shop.orders")
+	expect r is Err(Declined)
 }
 
 case "the limit itself is approved" {
-	let r <- authorise.call(100000)
+	stub Secrets.get("PAYMENTS_PROCESSOR") returns Some("fake")
+	let r <- authorise.call("o1", 100000) by Caller("shop.orders")
 	expect r is Ok(_)
+}
+
+-- The real processor, through the `shop.gateway` adapter, stubbed at its seam.
+
+case "without the fake, a charge goes to the gateway with the order as its reference" {
+	stub Gateway.authorise(_, _) returns Ok("auth_123")
+	let r <- authorise.call("o1", 2500) by Caller("shop.orders")
+	expect r is Ok("auth_123")
+	expect Gateway.authorise called once with reference == "o1" && cents == 2500
+}
+
+case "a card the processor declines is declined" {
+	stub Gateway.authorise(_, _) returns Err(GatewayError.Declined)
+	let r <- authorise.call("o1", 2500) by Caller("shop.orders")
+	expect r is Err(PayError.Declined)
+}
+
+case "a processor that cannot be reached is unavailable, not declined" {
+	stub Gateway.authorise(_, _) returns Err(GatewayError.Unavailable)
+	let r <- authorise.call("o1", 2500) by Caller("shop.orders")
+	expect r is Err(PayError.Unavailable)
+}
+
+case "an authorised payment is recorded against its order" {
+	stub Gateway.authorise(_, _) returns Ok("auth_123")
+	let _ <- authorise.call("o1", 2500) by Caller("shop.orders")
+	let p <- Payment("auth_123").view()
+	expect p.status == "authorised"
+	expect p.order == "o1"
+	expect p.cents == 2500
+}
+
+case "a declined payment records nothing" {
+	stub Gateway.authorise(_, _) returns Err(GatewayError.Declined)
+	let _ <- authorise.call("o1", 2500) by Caller("shop.orders")
+	let p <- Payment("auth_123").view()
+	expect p.status == "unknown"
+}
+
+-- The processor's webhooks. At this tier the signature is given, not checked;
+-- e2e/scenarios.sh signs real requests, and sends forged and stale ones.
+
+case "a capture notice moves an authorised payment on" {
+	let _ <- Payment("auth_1").authorised("o1", 2500)
+	let r <- webhooks.POST("/webhooks/processor", WebhookEvent {
+		id: "evt_1",
+		event: "payment.captured",
+		payment: "auth_1",
+	}) by ProcessorHook
+	expect r is Ok("captured")
+}
+
+case "a notice delivered twice is applied once" {
+	let _ <- Payment("auth_1").authorised("o1", 2500)
+	let n = Notice { id: "evt_1", event: "payment.captured" }
+	let first <- Payment("auth_1").notify(n)
+	expect first is Ok(Captured)
+	let again <- Payment("auth_1").notify(n)
+	expect again is Ok(Captured)
+	let refunded <- Payment("auth_1").notify(Notice { id: "evt_2", event: "payment.refunded" })
+	expect refunded is Ok(Refunded)
+	let late <- Payment("auth_1").notify(n)
+	expect late is Ok(Refunded)
+}
+
+case "a notice that does not follow from the status is refused" {
+	let _ <- Payment("auth_1").authorised("o1", 2500)
+	let r <- webhooks.POST("/webhooks/processor", WebhookEvent {
+		id: "evt_1",
+		event: "payment.refunded",
+		payment: "auth_1",
+	}) by ProcessorHook
+	expect r is Conflict(_)
+	let p <- Payment("auth_1").view()
+	expect p.status == "authorised"
+}
+
+case "a notice for a payment the shop never recorded is refused" {
+	let r <- webhooks.POST("/webhooks/processor", WebhookEvent {
+		id: "evt_1",
+		event: "payment.captured",
+		payment: "auth_404",
+	}) by ProcessorHook
+	expect r is Conflict(_)
 }

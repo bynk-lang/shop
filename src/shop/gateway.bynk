@@ -1,0 +1,30 @@
+adapter shop.gateway
+
+binding "./gateway.binding.ts"
+consumes bynk { Fetch, Secrets }
+exports capability { Gateway }
+exports transparent { GatewayError }
+
+---
+Why the processor did not authorise a charge. `Declined` is the card's answer;
+`Unavailable` is everything else: no credentials configured, the processor
+unreachable, or an answer the binding cannot read.
+---
+type GatewayError = enum { Declined, Unavailable }
+
+---
+A payment processor's HTTP API. `authorise` asks it to hold `cents` against
+the customer's card and returns the processor's id for the authorisation.
+`reference` is ours (the order id) and doubles as the idempotency key, so a
+retried request cannot authorise twice.
+---
+capability Gateway {
+	fn authorise(reference: String, cents: Int) -> Effect[Result[String, GatewayError]]
+}
+
+---
+Implemented in TypeScript, in `gateway.binding.ts`, against `Fetch` and
+`Secrets`: the binding reads the API key and base URL from secrets and never
+touches `fetch` or `env` itself.
+---
+provides Gateway = HttpGateway given Fetch, Secrets

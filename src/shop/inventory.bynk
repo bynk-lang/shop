@@ -1,6 +1,7 @@
 context shop.inventory
 
-exports transparent { StockError }
+consumes bynk { Clock, Logger }
+exports transparent { StockError, HoldError }
 
 ---
 Why a reservation was refused.
@@ -8,8 +9,36 @@ Why a reservation was refused.
 type StockError = enum { Insufficient }
 
 ---
+Why a hold could not be committed: there is none for the order, because it
+was never made or the sweeper has already released it.
+---
+type HoldError = enum { NoHold }
+
+---
+Stock set aside for one order while its payment is taken, and when.
+---
+type Hold = { qty: Int, at: Instant }
+
+---
+A hold the sweeper has found too old, with the order it was made for.
+---
+type Stale = { order: String, qty: Int }
+
+---
+How long a hold may stand before the sweeper releases it. Placing an order
+takes a second or two, so a hold this old belongs to a request that died
+between `reserve` and `commit` or `release`.
+---
+fn holdFor() -> Duration { 15.minutes }
+
+---
 The stock of one product. Each `sku` keys its own `Inventory` instance (a
 Cloudflare Durable Object), so products never contend with each other.
+
+`available` is what can still be sold. A reservation moves units out of it
+into `holds`, keyed by order id and stamped with the time, until the order
+commits them (sold) or releases them (back to `available`). The stamp is what
+lets the sweeper find a hold whose request never came back.
 
 The invariant is the contract: whatever the handlers do, stock never goes
 negative. `reserve` guards for it, and the invariant makes a future handler
@@ -20,6 +49,7 @@ agent Inventory {
 	key sku: String
 
 	store available: Cell[Int]
+	store holds: Map[String, Hold]
 
 	invariant available_non_negative:
 		available >= 0
@@ -29,21 +59,83 @@ agent Inventory {
 		available
 	}
 
-	on call reserve(qty: Int) -> Effect[Result[(), StockError]] {
-		if available < qty {
-			Err(Insufficient)
-		} else {
-			let _ <- available.update((v) => v - qty)
+	on call reserve(order: String, qty: Int) -> Effect[Result[(), StockError]] given Clock {
+		let already <- holds.contains(order)
+		if already {
 			Ok(())
+		} else {
+			if available < qty {
+				Err(Insufficient)
+			} else {
+				let now <- Clock.now()
+				let _ <- available.update((v) => v - qty)
+				let _ <- holds.put(order, Hold { qty: qty, at: now })
+				Ok(())
+			}
 		}
 	}
 
-	on call release(qty: Int) -> Effect[Int] {
-		let _ <- available.update((v) => v + qty)
-		available
+	on call commit(order: String) -> Effect[Result[(), HoldError]] {
+		let held <- holds.get(order)
+		match held {
+			None => Err(NoHold),
+			Some(_) => {
+				let _ <- holds.remove(order)
+				Ok(())
+			},
+		}
+	}
+
+	on call release(order: String) -> Effect[Int] {
+		let held <- holds.get(order)
+		match held {
+			None => available,
+			Some(h) => {
+				let _ <- holds.remove(order)
+				let _ <- available.update((v) => v + h.qty)
+				available
+			},
+		}
+	}
+
+	---
+	Release every hold made before `cutoff`, in one commit, and return the
+	units that came back.
+	---
+	on call releaseStale(cutoff: Instant) -> Effect[Int] {
+		let stale <- holds.entries.filter((e) => e.value.at < cutoff).map((e) => Stale {
+			order: e.key,
+			qty: e.value.qty,
+		}).collect()
+		let units = stale.fold(0, (n, h) => n + h.qty)
+		let _ <- stale.foldEff((), (done, h) => holds.remove(h.order))
+		let _ <- available.update((v) => v + units)
+		units
 	}
 
 	on call level() -> Effect[Int] { available }
+
+	on call held() -> Effect[Int] { holds.values.fold(0, (n, h) => n + h.qty) }
+}
+
+---
+Every sku that has ever been stocked, so the sweeper knows which `Inventory`
+instances to visit: Durable Objects cannot be listed.
+---
+agent Catalogue {
+	key id: String
+
+	store skus: Map[String, Instant]
+
+	on call add(sku: String) -> Effect[()] given Clock {
+		let known <- skus.contains(sku)
+		if !known {
+			let now <- Clock.now()
+			let _ <- skus.put(sku, now)
+		}
+	}
+
+	on call all() -> Effect[List[String]] { skus.keys.collect() }
 }
 
 ---
@@ -53,19 +145,50 @@ Binding, so a handler can tell who is asking. Nothing outside the system can
 reach these: a Service Binding is an internal channel.
 ---
 service restock {
-	on call(sku: String, qty: Int) -> Effect[Int] by c: Caller { Inventory(sku).restock(qty) }
+	on call(sku: String, qty: Int) -> Effect[Int] by c: Caller {
+		let _ <- Catalogue("all").add(sku)
+		Inventory(sku).restock(qty)
+	}
 }
 
 service reserve {
-	on call(sku: String, qty: Int) -> Effect[Result[(), StockError]] by c: Caller {
-		Inventory(sku).reserve(qty)
+	on call(sku: String, order: String, qty: Int) -> Effect[Result[(), StockError]] by c: Caller {
+		Inventory(sku).reserve(order, qty)
+	}
+}
+
+service commit {
+	on call(sku: String, order: String) -> Effect[Result[(), HoldError]] by c: Caller {
+		Inventory(sku).commit(order)
 	}
 }
 
 service release {
-	on call(sku: String, qty: Int) -> Effect[Int] by c: Caller { Inventory(sku).release(qty) }
+	on call(sku: String, order: String) -> Effect[Int] by c: Caller {
+		Inventory(sku).release(order)
+	}
 }
 
 service level {
 	on call(sku: String) -> Effect[Int] by c: Caller { Inventory(sku).level() }
+}
+
+---
+Every five minutes, release the holds older than `holdFor`. A Worker that dies
+between reserving stock and settling the payment leaves its hold behind; this
+is what gives those units back. The cutoff is measured from the scheduled
+time, not the clock, so a late run releases the same holds an on-time one
+would have.
+---
+service sweeper from cron {
+	on schedule("*/5 * * * *") (at: Int) -> Effect[Result[(), String]] given Logger {
+		let cutoff = Instant.fromEpochMillis(at) - holdFor()
+		let skus <- Catalogue("all").all()
+		let units <- skus.foldEff(0, (n, sku) => {
+			let u <- Inventory(sku).releaseStale(cutoff)
+			n + u
+		})
+		do if units > 0 { Logger.info("released \(units) units from stale holds") }
+		Ok(())
+	}
 }
