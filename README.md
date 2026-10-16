@@ -142,6 +142,19 @@ issue here.
 Where this example works around the language, or the toolchain falls short, it
 is written down here rather than hidden:
 
+- **The services between contexts are reachable from outside once deployed.**
+  At 0.330.4 a context's Worker answers its `on call` services on every route
+  it has, including Cloudflare's default `workers.dev` address, and trusts the
+  caller name a request claims. So anyone who finds, say, the inventory
+  Worker's address could restock it. Bynk's main branch signs every call
+  between contexts with a key per pair
+  ([bynk-lang/bynk#2004](https://github.com/bynk-lang/bynk/pull/2004),
+  [#2012](https://github.com/bynk-lang/bynk/pull/2012)), not yet released.
+  Until then, turn off the `workers.dev` route for `shop.inventory`, which has
+  no public routes. That doesn't help `shop.payments` or `shop.ledger`: every
+  route a Worker has serves the internal paths too, so payments' `authorise`
+  and the ledger's event deliveries stay reachable through their public
+  routes until the fix is released.
 - **An agent can't call another context.** The `Order` agent would naturally
   call the inventory itself, but that faults at runtime
   ([bynk-lang/bynk#1960](https://github.com/bynk-lang/bynk/issues/1960)), so the
