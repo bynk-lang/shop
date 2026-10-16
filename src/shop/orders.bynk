@@ -67,8 +67,10 @@ type Snapshot = { status: Status, owner: String, line: Option[OrderLine] }
 ---
 One order, keyed by the id the customer chose, so placing the same id twice
 cannot place it twice. The agent owns the order's state and the rules for
-moving it; it calls no other context. The `api` service below coordinates the
-inventory, the payment and the events, because those are cross-context calls.
+moving it; it calls no other context. Rejected and cancelled are final: the
+two transitions refuse any commit that would move an order out of either.
+The `api` service below coordinates the inventory, the payment and the
+events, because those are cross-context calls.
 ---
 agent Order {
 	key id: OrderId
@@ -76,6 +78,12 @@ agent Order {
 	store status: Cell[Status] = Pending
 	store owner: Cell[String]
 	store line: Cell[Option[OrderLine]]
+
+	transition rejected_is_final:
+		old.status is Rejected implies new.status is Rejected
+
+	transition cancelled_is_final:
+		old.status is Cancelled implies new.status is Cancelled
 
 	on call open(who: String, wanted: OrderLine) -> Effect[Result[(), OrderError]] {
 		match status {
