@@ -78,6 +78,11 @@ expect 403 "" "$(call "$alice" PUT "$orders/stock/widget" '{"qty":10}')"
 echo "an admin stocks 10 widgets"
 expect 200 10 "$(call "$admin" PUT "$orders/stock/widget" '{"qty":10}')"
 
+echo "anyone can see that widgets are in stock; only a customer sees how many"
+r=$(call - GET "$orders/stock/widget")
+expect 200 '{"kind":"InStock"}' "$r"
+expect 200 '{"kind":"Left","count":10}' "$(call "$alice" GET "$orders/stock/widget")"
+
 echo "alice places order o1 for 3 widgets: stock is reserved, the order is placed"
 r=$(call "$alice" PUT "$orders/orders/o1" '{"sku":"widget","qty":3,"cents":2500}')
 expect 201 placed "$r"
