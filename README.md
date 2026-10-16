@@ -161,8 +161,9 @@ is written down here rather than hidden:
 - **A `bynkc test` case can't reach an adapter's binding.** Promoting a case
   to `as integration` should run the real binding, but at 0.330.4 the adapter's
   provider is not instantiated, and a `suite` aimed at the adapter itself
-  emits TypeScript that does not compile. The binding is tested with Node
-  instead ([`tests/bindings`](tests/bindings)).
+  emits TypeScript that does not compile
+  ([accuser/bynk#1975](https://github.com/accuser/bynk/issues/1975)). The
+  binding is tested with Node instead ([`tests/bindings`](tests/bindings)).
 - **One provider per capability.** There is no way to pick a provider per
   environment, so `CardProcessor` reads `PAYMENTS_PROCESSOR` and chooses at
   run time. The fake is a pure function rather than a provider of its own.
