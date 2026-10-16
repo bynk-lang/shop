@@ -83,6 +83,14 @@ r=$(call "$alice" PUT "$orders/orders/o1" '{"sku":"widget","qty":3,"cents":2500}
 expect 201 placed "$r"
 expect 200 7 "$(call "$admin" GET "$orders/stock/widget")"
 
+echo "a zero quantity, an empty sku or a price over the limit is a 400, before any handler runs"
+expect 400 '"path":"$.qty"' "$(call "$alice" PUT "$orders/orders/o9" '{"sku":"widget","qty":0,"cents":100}')"
+expect 400 '"path":"$.sku"' "$(call "$alice" PUT "$orders/orders/o9" '{"sku":"","qty":1,"cents":100}')"
+expect 400 '"path":"$.cents"' "$(call "$alice" PUT "$orders/orders/o9" '{"sku":"widget","qty":1,"cents":10000001}')"
+expect 400 RefinementViolation "$(call "$admin" PUT "$orders/stock/widget" '{"qty":-5}')"
+expect 200 7 "$(call "$admin" GET "$orders/stock/widget")"
+expect 404 "" "$(call "$alice" GET "$orders/orders/o9")"
+
 echo "placing the same id again is refused, and changes nothing"
 expect 409 decided "$(call "$alice" PUT "$orders/orders/o1" '{"sku":"widget","qty":1,"cents":100}')"
 expect 200 7 "$(call "$admin" GET "$orders/stock/widget")"

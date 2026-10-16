@@ -5,22 +5,22 @@ schema = 1
 
 [[events."shop.orders.OrderCancelled".fields]]
 name = "cents"
-type = "Int"
+type = "Cents"
 default = false
 
 [[events."shop.orders.OrderCancelled".fields]]
 name = "orderId"
-type = "String"
+type = "OrderId"
 default = false
 
 [[events."shop.orders.OrderCancelled".fields]]
 name = "qty"
-type = "Int"
+type = "Quantity"
 default = false
 
 [[events."shop.orders.OrderCancelled".fields]]
 name = "sku"
-type = "String"
+type = "Sku"
 default = false
 
 [events."shop.orders.OrderPlaced"]
@@ -28,20 +28,20 @@ schema = 1
 
 [[events."shop.orders.OrderPlaced".fields]]
 name = "cents"
-type = "Int"
+type = "Cents"
 default = false
 
 [[events."shop.orders.OrderPlaced".fields]]
 name = "orderId"
-type = "String"
+type = "OrderId"
 default = false
 
 [[events."shop.orders.OrderPlaced".fields]]
 name = "qty"
-type = "Int"
+type = "Quantity"
 default = false
 
 [[events."shop.orders.OrderPlaced".fields]]
 name = "sku"
-type = "String"
+type = "Sku"
 default = false

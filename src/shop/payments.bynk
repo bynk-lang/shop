@@ -1,5 +1,6 @@
 context shop.payments
 
+uses shop.values
 consumes shop.gateway { Gateway }
 consumes bynk { Clock, Secrets }
 exports transparent { PayError }
@@ -150,9 +151,10 @@ webhooks have something to update.
 ---
 service authorise {
 	on call(
-		reference: String,
-		cents: Int
+		order: OrderId,
+		cents: Cents
 	) -> Effect[Result[String, PayError]] by c: Caller given Processor {
+		let reference = orderRef(order)
 		let r <- Processor.charge(reference, cents)
 		match r {
 			Ok(id) => {
