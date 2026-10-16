@@ -129,6 +129,14 @@ type OrderView = {
 
 type StockRequest = { qty: Quantity }
 
+---
+Whether a product can be ordered. A visitor sees only `InStock` or
+`SoldOut`; a signed-in customer sees how many are left.
+---
+type Availability = | InStock
+| SoldOut
+| Left(count: Int)
+
 fn name(s: Status) -> String {
 	match s {
 		Pending => "pending",
@@ -277,8 +285,13 @@ service api from http {
 		Ok(level)
 	}
 
-	on GET("/stock/:sku") (sku: Sku) -> Effect[HttpResult[Int]] by a: Admin {
+	on GET("/stock/:sku") (
+		sku: Sku
+	) -> Effect[HttpResult[Availability]] by who: Customer | Visitor {
 		let level <- Stock.level(sku)
-		Ok(level)
+		match who {
+			Customer(_) => Ok(Left(level)),
+			Visitor => if level > 0 { Ok(InStock) } else { Ok(SoldOut) },
+		}
 	}
 }

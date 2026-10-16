@@ -81,7 +81,7 @@ need a token with an `admin` claim.
 | `GET /orders/:id` | the order's customer | The order. Someone else's is a `404`. |
 | `POST /orders/:id/cancel` | the order's customer | Cancel a placed order and return its stock. |
 | `PUT /stock/:sku` | admin | Add `{"qty":10}` to a product's stock. |
-| `GET /stock/:sku` | admin | A product's stock. |
+| `GET /stock/:sku` | anyone | Whether a product is in stock: `{"kind":"InStock"}` or `{"kind":"SoldOut"}`. A customer sees how many are left: `{"kind":"Left","count":10}`. |
 | `GET /totals` (on `shop.ledger`) | admin | Standing orders, units and cents, as the ledger saw them in events. |
 | `POST /webhooks/processor` (on `shop.payments`) | the payment processor (signed) | A notice about a payment: `{"id":"evt_1","event":"payment.captured","payment":"auth_123"}`. `200` with the payment's new status, `409` if it does not follow, `401` unsigned or stale. |
 
