@@ -29,9 +29,10 @@ jobs:
     name: Scenarios
     runs-on: ubuntu-latest
     env:
-      # Not a secret: a throwaway key for a server that only exists for this
-      # job. The scenarios sign their own tokens with it.
+      # Not secrets: throwaway keys for a server that only exists for this
+      # job. The scenarios sign their own tokens and webhooks with them.
       AUTH_JWT_SECRET: e2e-only-not-a-secret
+      PAYMENTS_WEBHOOK_SECRET: e2e-only-not-a-webhook-secret
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,5 +43,11 @@ jobs:
           # means your change broke it. Bump it deliberately; the canary
           # passes newer releases in.
           version: ${{ inputs.version || '0.330.4' }}
-          wrangler-args: --var AUTH_JWT_SECRET:${{ env.AUTH_JWT_SECRET }}
+          # The fake payment processor, and the `/__scheduled` route the
+          # scenarios use to run the stale-reservation sweeper on demand.
+          wrangler-args: >-
+            --var AUTH_JWT_SECRET:${{ env.AUTH_JWT_SECRET }}
+            --var PAYMENTS_WEBHOOK_SECRET:${{ env.PAYMENTS_WEBHOOK_SECRET }}
+            --var PAYMENTS_PROCESSOR:fake
+            --test-scheduled
           run: ./e2e/scenarios.sh

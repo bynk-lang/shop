@@ -6,26 +6,121 @@ case "stock starts at zero and restocking adds to it" {
 	expect after == 10
 }
 
-case "a reservation takes stock, a release puts it back" {
+case "a reservation holds stock for its order, a release puts it back" {
 	let _ <- Inventory("w2").restock(10)
-	let held <- Inventory("w2").reserve(3)
+	let held <- Inventory("w2").reserve("o1", 3)
 	expect held is Ok(_)
 	let mid <- Inventory("w2").level()
 	expect mid == 7
-	let back <- Inventory("w2").release(3)
+	let holding <- Inventory("w2").held()
+	expect holding == 3
+	let back <- Inventory("w2").release("o1")
 	expect back == 10
+	let after <- Inventory("w2").held()
+	expect after == 0
 }
 
 case "reserving more than is available is refused and takes nothing" {
 	let _ <- Inventory("w3").restock(2)
-	let held <- Inventory("w3").reserve(3)
+	let held <- Inventory("w3").reserve("o1", 3)
 	expect held is Err(_)
 	let left <- Inventory("w3").level()
 	expect left == 2
+	let holding <- Inventory("w3").held()
+	expect holding == 0
 }
 
 case "each sku has its own stock" {
 	let _ <- Inventory("a").restock(5)
 	let other <- Inventory("b").level()
 	expect other == 0
+}
+
+case "reserving for the same order twice holds once" {
+	let _ <- Inventory("w4").restock(10)
+	let _ <- Inventory("w4").reserve("o1", 3)
+	let again <- Inventory("w4").reserve("o1", 3)
+	expect again is Ok(_)
+	let left <- Inventory("w4").level()
+	expect left == 7
+}
+
+case "a committed hold is sold: releasing it afterwards returns nothing" {
+	let _ <- Inventory("w5").restock(10)
+	let _ <- Inventory("w5").reserve("o1", 3)
+	let sold <- Inventory("w5").commit("o1")
+	expect sold is Ok(_)
+	let after <- Inventory("w5").release("o1")
+	expect after == 7
+	let holding <- Inventory("w5").held()
+	expect holding == 0
+}
+
+case "a hold that is gone cannot be committed" {
+	let _ <- Inventory("w6").restock(10)
+	let _ <- Inventory("w6").reserve("o1", 3)
+	let _ <- Inventory("w6").release("o1")
+	let sold <- Inventory("w6").commit("o1")
+	expect sold is Err(_)
+	let never <- Inventory("w6").commit("o2")
+	expect never is Err(_)
+}
+
+case "a release is idempotent" {
+	let _ <- Inventory("w7").restock(10)
+	let _ <- Inventory("w7").reserve("o1", 3)
+	let first <- Inventory("w7").release("o1")
+	expect first == 10
+	let second <- Inventory("w7").release("o1")
+	expect second == 10
+}
+
+case "releaseStale returns the holds made before the cutoff, and only those" {
+	stub Clock.now() returns each [Instant.fromEpochMillis(1000), Instant.fromEpochMillis(5000)]
+	let _ <- Inventory("w8").restock(10)
+	let _ <- Inventory("w8").reserve("old", 2)
+	let _ <- Inventory("w8").reserve("new", 3)
+	let units <- Inventory("w8").releaseStale(Instant.fromEpochMillis(3000))
+	expect units == 2
+	let left <- Inventory("w8").level()
+	expect left == 7
+	let holding <- Inventory("w8").held()
+	expect holding == 3
+	let sold <- Inventory("w8").commit("new")
+	expect sold is Ok(_)
+	let gone <- Inventory("w8").commit("old")
+	expect gone is Err(_)
+}
+
+case "restocking registers the sku in the catalogue, once" {
+	let _ <- restock.call("w9", 5) by Caller("shop.orders")
+	let _ <- restock.call("w9", 5) by Caller("shop.orders")
+	let _ <- restock.call("w10", 1) by Caller("shop.orders")
+	let skus <- Catalogue("all").all()
+	expect skus.count() == 2
+	expect skus.any((s) => s == "w9")
+}
+
+case "the sweeper releases a hold older than fifteen minutes" {
+	-- The hold is made at the epoch; the run is scheduled sixteen minutes on.
+	let _ <- restock.call("w11", 10) by Caller("shop.orders")
+	let _ <- reserve.call("w11", "o1", 4) by Caller("shop.orders")
+	let r <- sweeper.schedule("*/5 * * * *", 960000)
+	expect r is Ok(_)
+	let left <- level.call("w11") by Caller("shop.orders")
+	expect left == 10
+	expect Logger.info called once with msg == "released 4 units from stale holds"
+}
+
+case "the sweeper leaves a fresh hold, and a sold one, alone" {
+	let _ <- restock.call("w12", 10) by Caller("shop.orders")
+	let _ <- reserve.call("w12", "fresh", 2) by Caller("shop.orders")
+	let _ <- reserve.call("w12", "sold", 3) by Caller("shop.orders")
+	let _ <- commit.call("w12", "sold") by Caller("shop.orders")
+	-- Fourteen minutes on: "fresh" is not yet stale, "sold" holds nothing.
+	let r <- sweeper.schedule("*/5 * * * *", 840000)
+	expect r is Ok(_)
+	let left <- level.call("w12") by Caller("shop.orders")
+	expect left == 5
+	expect Logger.info never called
 }

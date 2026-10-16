@@ -1,34 +1,199 @@
 context shop.payments
 
+consumes shop.gateway { Gateway }
+consumes bynk { Clock, Secrets }
 exports transparent { PayError }
 
 ---
-Why a charge was refused.
+Why a charge was refused. `Declined` is the card's answer; `Unavailable` means
+the processor could not be asked, so the customer may try again.
 ---
-type PayError = enum { Declined }
+type PayError = enum { Declined, Unavailable }
 
 ---
 The card processor. A capability is an interface the context's handlers use
-without knowing what provides it, so a test can swap the provider and a
-deployment can bind a real one.
+without knowing what provides it. `charge` returns the processor's id for the
+authorisation; `reference` is the order id, so the processor can tell a retry
+from a second charge.
 ---
 capability Processor {
-	fn charge(cents: Int) -> Effect[Result[Int, PayError]]
+	fn charge(reference: String, cents: Int) -> Effect[Result[String, PayError]]
 }
 
 ---
-A stand-in processor with one rule: charges over 1,000.00 are declined. Its
-approval number is the amount, which is enough to check the value arrives.
+The one provider of `Processor`. A context has one provider per capability,
+so the choice between the fake processor and the real one is made here, from
+configuration: `PAYMENTS_PROCESSOR=fake` (tests and `bynk dev`) charges with
+`fakeCharge`; anything else, including unset, goes to the payment API through
+the `shop.gateway` adapter. Unset falls through to the real processor, so a
+deployment that forgets the setting fails closed (no API key, `Unavailable`)
+rather than approving every charge.
 ---
-provides Processor = FakeProcessor {
-	fn charge(cents: Int) -> Effect[Result[Int, PayError]] {
-		if cents > 100000 { Err(Declined) } else { Ok(cents) }
+provides Processor = CardProcessor given Gateway, Secrets {
+	fn charge(reference: String, cents: Int) -> Effect[Result[String, PayError]] {
+		let which <- Secrets.get("PAYMENTS_PROCESSOR")
+		match which {
+			Some("fake") => fakeCharge(reference, cents),
+			_ => {
+				let r <- Gateway.authorise(reference, cents)
+				match r {
+					Ok(id) => Ok(id),
+					Err(GatewayError.Declined) => Err(PayError.Declined),
+					Err(_) => Err(PayError.Unavailable),
+				}
+			},
+		}
 	}
 }
 
+---
+The fake processor, for tests and local runs: charges over 1,000.00 are
+declined, and the authorisation id is made from the order id. A fake needs no
+capability; it is a pure function.
+---
+fn fakeCharge(reference: String, cents: Int) -> Result[String, PayError] {
+	if cents > 100000 { Err(PayError.Declined) } else { Ok("fake_\(reference)") }
+}
+
+---
+Where a payment is, as the processor reports it. The shop records
+`Authorised` when it takes the payment; the processor's webhooks move it on.
+---
+type PaymentStatus = enum { Unknown, Authorised, Captured, Refunded, Failed }
+
+---
+One webhook notice, as the payment's history keeps it.
+---
+type Notice = { id: String, event: String }
+
+---
+Why a notice was not applied: it does not follow from the payment's status
+(an unknown payment, or a refund of a payment that was never captured).
+---
+type NoticeError = enum { Unexpected }
+
+---
+One payment, keyed by the processor's authorisation id. `notices` is its
+history: every webhook notice applied to it, kept for 90 days. The history is
+also the replay guard: the processor retries a webhook until it gets a `2xx`,
+so the same notice can arrive more than once, and a notice already in the log
+is answered without being applied again.
+---
+agent Payment {
+	key id: String
+
+	store status: Cell[PaymentStatus] = Unknown
+	store order: Cell[String]
+	store cents: Cell[Int]
+	store notices: Log[Notice] @retain(90.days)
+
+	on call authorised(reference: String, amount: Int) -> Effect[()] {
+		order := reference
+		cents := amount
+		status := Authorised
+	}
+
+	on call notify(n: Notice) -> Effect[Result[PaymentStatus, NoticeError]] given Clock {
+		let seen <- notices.since(Instant.fromEpochMillis(0)).any((past) => past.id == n.id)
+		if seen {
+			Ok(status)
+		} else {
+			match after(status, n.event) {
+				None => Err(Unexpected),
+				Some(next) => {
+					let _ <- notices.append(n)
+					status := next
+					Ok(next)
+				},
+			}
+		}
+	}
+
+	on call view() -> Effect[PaymentView] {
+		PaymentView { status: label(status), order: order, cents: cents }
+	}
+}
+
+type PaymentView = { status: String, order: String, cents: Int }
+
+---
+The processor's events, and the status each one leads to.
+---
+fn after(s: PaymentStatus, event: String) -> Option[PaymentStatus] {
+	match s {
+		Authorised => match event {
+			"payment.captured" => Some(Captured),
+			"payment.failed" => Some(Failed),
+			_ => None,
+		},
+		Captured => match event {
+			"payment.refunded" => Some(Refunded),
+			_ => None,
+		},
+		_ => None,
+	}
+}
+
+fn label(s: PaymentStatus) -> String {
+	match s {
+		Unknown => "unknown",
+		Authorised => "authorised",
+		Captured => "captured",
+		Refunded => "refunded",
+		Failed => "failed",
+	}
+}
+
+---
+Authorise a charge for an order, and record the payment so the processor's
+webhooks have something to update.
+---
 service authorise {
-	on call(cents: Int) -> Effect[Result[Int, PayError]] given Processor {
-		let r <- Processor.charge(cents)
-		r
+	on call(
+		reference: String,
+		cents: Int
+	) -> Effect[Result[String, PayError]] by c: Caller given Processor {
+		let r <- Processor.charge(reference, cents)
+		match r {
+			Ok(id) => {
+				let _ <- Payment(id).authorised(reference, cents)
+				Ok(id)
+			},
+			Err(e) => Err(e),
+		}
+	}
+}
+
+---
+The processor, calling back. A webhook carries no token: it is authenticated
+by an HMAC-SHA256 signature over `<timestamp>.<body>`, made with the secret the
+processor and the shop share. The boundary checks it before the body is
+parsed, and refuses a timestamp more than five minutes from now, so a captured
+request cannot be replayed later. Either failure is a `401`.
+---
+actor ProcessorHook {
+	auth = Signature(
+		secret = "PAYMENTS_WEBHOOK_SECRET",
+		header = "X-Processor-Signature",
+		timestamp = "X-Processor-Timestamp",
+		tolerance = 300
+	)
+}
+
+---
+A webhook event, as the processor sends it: its own id, what happened, and the
+authorisation it happened to.
+---
+type WebhookEvent = { id: String, event: String, payment: String }
+
+service webhooks from http {
+	on POST("/webhooks/processor") (
+		body: WebhookEvent
+	) -> Effect[HttpResult[String]] by ProcessorHook {
+		let r <- Payment(body.payment).notify(Notice { id: body.id, event: body.event })
+		match r {
+			Ok(s) => Ok(label(s)),
+			Err(_) => Conflict("the notice does not follow from the payment's status"),
+		}
 	}
 }

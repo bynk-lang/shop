@@ -3,13 +3,19 @@
 # `bynk dev`: four Workers (inventory, payments, orders, ledger) wired by
 # Service Bindings and events. A failing command fails the run.
 #
-# Environment from bynk-dev: BYNK_DEV_URL_SHOP_ORDERS, BYNK_DEV_URL_SHOP_LEDGER.
-# AUTH_JWT_SECRET must match the secret passed to `bynk dev` (wrangler-args).
+# Environment from bynk-dev: BYNK_DEV_URL_SHOP_ORDERS, BYNK_DEV_URL_SHOP_LEDGER,
+# BYNK_DEV_URL_SHOP_PAYMENTS, BYNK_DEV_URL_SHOP_INVENTORY. AUTH_JWT_SECRET and
+# PAYMENTS_WEBHOOK_SECRET must match the values passed to `bynk dev`
+# (wrangler-args), which must also set PAYMENTS_PROCESSOR:fake and pass
+# --test-scheduled, so the sweeper can be run on demand.
 set -euo pipefail
 
 orders="${BYNK_DEV_URL_SHOP_ORDERS:?run this through bynk-lang/bynk-dev}"
 ledger="${BYNK_DEV_URL_SHOP_LEDGER:?run this through bynk-lang/bynk-dev}"
+payments="${BYNK_DEV_URL_SHOP_PAYMENTS:?run this through bynk-lang/bynk-dev}"
+inventory="${BYNK_DEV_URL_SHOP_INVENTORY:?run this through bynk-lang/bynk-dev}"
 secret="${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET}"
+whsecret="${PAYMENTS_WEBHOOK_SECRET:?set PAYMENTS_WEBHOOK_SECRET}"
 
 b64() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
@@ -118,5 +124,46 @@ if [ "$got" != "$want" ]; then
   echo "::error::ledger totals (orders units cents): expected '$want', got '$got' from: $r"
   exit 1
 fi
+
+# notify <json> [timestamp] [signature]: POST a webhook notice to payments as
+# the processor sends it, signed over "<timestamp>.<body>" unless a signature
+# is given; print "<status> <body>".
+notify() {
+  local body="$1" ts="${2:-$(date +%s)}" sig="${3:-}"
+  [ -n "$sig" ] || sig=$(printf '%s.%s' "$ts" "$body" | openssl dgst -sha256 -hmac "$whsecret" -r | cut -d' ' -f1)
+  local out
+  out=$(curl -sS -X POST -w ' %{http_code}' "$payments/webhooks/processor" \
+    -H 'Content-Type: application/json' \
+    -H "X-Processor-Timestamp: $ts" -H "X-Processor-Signature: sha256=$sig" -d "$body")
+  printf '%s %s' "${out##* }" "${out% *}"
+}
+
+# The fake processor's authorisation id for o4 is "fake_o4".
+captured='{"id":"evt_1","event":"payment.captured","payment":"fake_o4"}'
+
+echo "the processor's webhook: an unsigned or forged notice is 401"
+expect 401 "" "$(call - POST "$payments/webhooks/processor" "$captured")"
+expect 401 "" "$(notify "$captured" "$(date +%s)" deadbeef)"
+
+echo "a correctly signed notice from ten minutes ago is refused: the replay window is five"
+expect 401 "" "$(notify "$captured" "$(( $(date +%s) - 600 ))")"
+
+echo "a signed capture moves o4's payment on, and the same notice again changes nothing"
+expect 200 captured "$(notify "$captured")"
+expect 200 captured "$(notify "$captured")"
+
+echo "a refund follows a capture; a second capture does not"
+expect 200 refunded "$(notify '{"id":"evt_2","event":"payment.refunded","payment":"fake_o4"}')"
+expect 409 "" "$(notify '{"id":"evt_3","event":"payment.captured","payment":"fake_o4"}')"
+
+echo "a notice for a payment the shop never took is refused"
+expect 409 "" "$(notify '{"id":"evt_4","event":"payment.captured","payment":"auth_unknown"}')"
+
+echo "the stale-reservation sweeper runs an hour from now, and leaves settled stock alone"
+# Every hold so far was committed or released, so there is nothing to sweep.
+at=$(( ($(date +%s) + 3600) * 1000 ))
+r=$(curl -sS -w ' %{http_code}' "$inventory/__scheduled?cron=*/5+*+*+*+*&time=$at")
+expect 200 "" "${r##* } ${r% *}"
+expect 200 8 "$(call "$admin" GET "$orders/stock/widget")"
 
 echo "all scenarios passed"

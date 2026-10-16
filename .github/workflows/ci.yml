@@ -21,3 +21,7 @@ jobs:
         with:
           version: 0.330.4   # bump deliberately; the canary tests newer releases
           source: .
+      # The payment adapter's TypeScript binding, tested as TypeScript against
+      # the out-js/ build that `bynkc test` (above) leaves behind.
+      - name: Binding tests
+        run: node --test tests/bindings/*.test.cjs
