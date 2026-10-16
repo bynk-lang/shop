@@ -91,6 +91,11 @@ expect 400 RefinementViolation "$(call "$admin" PUT "$orders/stock/widget" '{"qt
 expect 200 7 "$(call "$admin" GET "$orders/stock/widget")"
 expect 404 "" "$(call "$alice" GET "$orders/orders/o9")"
 
+echo "an order whose total is over 100,000.00 is a 422, and reserves nothing"
+expect 422 "100,000.00" "$(call "$alice" PUT "$orders/orders/o8" '{"sku":"widget","qty":1000,"cents":20000}')"
+expect 200 7 "$(call "$admin" GET "$orders/stock/widget")"
+expect 404 "" "$(call "$alice" GET "$orders/orders/o8")"
+
 echo "placing the same id again is refused, and changes nothing"
 expect 409 decided "$(call "$alice" PUT "$orders/orders/o1" '{"sku":"widget","qty":1,"cents":100}')"
 expect 200 7 "$(call "$admin" GET "$orders/stock/widget")"

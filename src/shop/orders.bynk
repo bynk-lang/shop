@@ -3,7 +3,7 @@ context shop.orders
 uses shop.values
 consumes shop.inventory as Stock
 consumes shop.payments as Pay
-consumes bynk { Events }
+consumes bynk { Events, Logger }
 exports transparent { OrderPlaced, OrderCancelled }
 
 ---
@@ -35,9 +35,16 @@ Where an order is in its life. A new order is `Pending`; `open` moves it to
 type Status = enum { Pending, Opened, Placed, Rejected, Cancelled }
 
 ---
-Why a placement or cancellation was refused.
+Why a placement or cancellation was refused. `TooLarge` carries the reason
+the order's total isn't a price the shop can charge; `embeds` lets `?` turn
+that `ValidationError` into an `OrderError`.
 ---
-type OrderError = enum { OutOfStock, PaymentDeclined, AlreadyDecided, NotPlaced }
+type OrderError = | TooLarge(reason: ValidationError)
+| OutOfStock
+| PaymentDeclined
+| AlreadyDecided
+| NotPlaced
+embeds ValidationError as TooLarge
 
 ---
 What the customer is buying: one sku, how many, and the price they agreed.
@@ -45,6 +52,12 @@ Every field is checked when the request body is read, so a zero quantity or
 an empty sku is a `400` before any handler runs.
 ---
 type OrderLine = { sku: Sku, qty: Quantity, cents: Cents }
+
+---
+What the order comes to. The total must itself be a `Cents`, so an order over
+100,000.00 is refused before any stock is reserved or card charged.
+---
+fn total(line: OrderLine) -> Result[Cents, OrderError] { Ok(Cents.of(line.qty * line.cents)?) }
 
 ---
 An order as its agent holds it. `line` is `None` until the order is opened.
@@ -144,55 +157,63 @@ service api from http {
 	on PUT("/orders/:id") (
 		id: OrderId,
 		body: OrderLine
-	) -> Effect[HttpResult[OrderView]] by c: Customer given Events {
-		let opened <- Order(id).open(c.identity, body)
-		match opened {
-			Err(_) => Conflict("order already decided"),
-			Ok(_) => {
-				let held <- Stock.reserve(body.sku, id, body.qty)
-				match held {
-					Err(_) => {
-						let _ <- Order(id).reject()
-						Conflict("out of stock")
-					},
+	) -> Effect[HttpResult[OrderView]] by c: Customer given Events, Logger {
+		match total(body) {
+			Err(_) => UnprocessableEntity("the order comes to more than 100,000.00"),
+			Ok(t) => {
+				let opened <- Order(id).open(c.identity, body)
+				match opened {
+					Err(_) => Conflict("order already decided"),
 					Ok(_) => {
-						let paid <- Pay.authorise(id, body.cents)
-						match paid {
-							Err(why) => {
-								let _ <- Stock.release(body.sku, id)
+						let held <- Stock.reserve(body.sku, id, body.qty)
+						match held {
+							Err(_) => {
 								let _ <- Order(id).reject()
-								match why {
-									Declined => UnprocessableEntity("payment declined"),
-									Unavailable => ServiceUnavailable("payment unavailable"),
-								}
+								Conflict("out of stock")
 							},
 							Ok(_) => {
-								-- `Err` means the sweeper released the hold while the payment
-								-- was being taken. The stock may already be someone else's, so
-								-- the order cannot stand. The authorisation should be voided
-								-- too; `Gateway` has no void yet, so for now it is not.
-								let sold <- Stock.commit(body.sku, id)
-								match sold {
-									Err(_) => {
+								let paid <- Pay.authorise(id, body.cents)
+								match paid {
+									Err(why) => {
+										let _ <- Stock.release(body.sku, id)
 										let _ <- Order(id).reject()
-										Conflict("reservation expired")
+										match why {
+											Declined => UnprocessableEntity("payment declined"),
+											Unavailable => ServiceUnavailable(
+												"payment unavailable"
+											),
+										}
 									},
 									Ok(_) => {
-										let _ <- Order(id).confirm()
-										let _ <- Events.emit[OrderPlaced](OrderPlaced {
-											orderId: id,
-											sku: body.sku,
-											qty: body.qty,
-											cents: body.cents,
-										})
-										Created(OrderView {
-											id: id,
-											status: "placed",
-											owner: c.identity,
-											sku: body.sku,
-											qty: body.qty,
-											cents: body.cents,
-										})
+										-- `Err` means the sweeper released the hold while the payment
+										-- was being taken. The stock may already be someone else's, so
+										-- the order cannot stand. The authorisation should be voided
+										-- too; `Gateway` has no void yet, so for now it is not.
+										let sold <- Stock.commit(body.sku, id)
+										match sold {
+											Err(_) => {
+												let _ <- Order(id).reject()
+												Conflict("reservation expired")
+											},
+											Ok(_) => {
+												let _ <- Order(id).confirm()
+												let _ <- Events.emit[OrderPlaced](OrderPlaced {
+													orderId: id,
+													sku: body.sku,
+													qty: body.qty,
+													cents: body.cents,
+												})
+												~> Logger.info("placed order for \(t) cents")
+												Created(OrderView {
+													id: id,
+													status: "placed",
+													owner: c.identity,
+													sku: body.sku,
+													qty: body.qty,
+													cents: body.cents,
+												})
+											},
+										}
 									},
 								}
 							},
