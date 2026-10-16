@@ -33,7 +33,7 @@ fn orderRef(id: OrderId) -> String { id.raw }
 ---
 The sku as plain text, for a map key. A `Map` keyed by an opaque type compiles
 to TypeScript that `tsc` rejects when its keys are collected
-(accuser/bynk#1982), so the shop keys its maps by text and keeps the opaque
+(bynk-lang/bynk#1982), so the shop keys its maps by text and keeps the opaque
 value inside the entry.
 ---
 fn skuRef(s: Sku) -> String { s.raw }

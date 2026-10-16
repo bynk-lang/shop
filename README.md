@@ -144,42 +144,42 @@ is written down here rather than hidden:
 
 - **An agent can't call another context.** The `Order` agent would naturally
   call the inventory itself, but that faults at runtime
-  ([accuser/bynk#1960](https://github.com/accuser/bynk/issues/1960)), so the
+  ([bynk-lang/bynk#1960](https://github.com/bynk-lang/bynk/issues/1960)), so the
   `api` service does the cross-context calls and the agent keeps to its own
   state.
 - **Events and `bynk deploy` don't compose.** Orders emit to the ledger, and a
   subscriber must consume the emitter, so the generated Service Bindings form a
   cycle and the deploy is refused
-  ([accuser/bynk#1961](https://github.com/accuser/bynk/issues/1961)). Until it
+  ([bynk-lang/bynk#1961](https://github.com/bynk-lang/bynk/issues/1961)). Until it
   is fixed, [`deploy.yml`](.github/workflows/deploy.yml) is manual and the
   canary skips its deploy dry run.
 - **No `system`-tier test of the whole flow.** `bynkc test`'s `system` tier
   stands the contexts up in process, but only `on call` services are
   addressable, and it wires no event fan-out
-  ([accuser/bynk#1959](https://github.com/accuser/bynk/issues/1959)). The
+  ([bynk-lang/bynk#1959](https://github.com/bynk-lang/bynk/issues/1959)). The
   end-to-end scenarios cover the flow against the real Workers instead.
 - **A `bynkc test` case can't reach an adapter's binding.** Promoting a case
   to `as integration` should run the real binding, but at 0.330.4 the adapter's
   provider is not instantiated, and a `suite` aimed at the adapter itself
   emits TypeScript that does not compile
-  ([accuser/bynk#1975](https://github.com/accuser/bynk/issues/1975)). The
+  ([bynk-lang/bynk#1975](https://github.com/bynk-lang/bynk/issues/1975)). The
   binding is tested with Node instead ([`tests/bindings`](tests/bindings)).
 - **A map can't be keyed by an opaque type.** `Map[Sku, …]` checks clean, but
   collecting its keys emits TypeScript that `tsc` rejects
-  ([accuser/bynk#1982](https://github.com/accuser/bynk/issues/1982)). The
+  ([bynk-lang/bynk#1982](https://github.com/bynk-lang/bynk/issues/1982)). The
   inventory's holds and the catalogue are keyed by text (`orderRef`,
   `skuRef` in `shop.values`) and keep the opaque value inside the entry.
 - **Three smaller workarounds in the tests and the sweep.** Each passes
   `bynkc check` and then fails, so the shop does it the other way:
   - A test that calls a `by c: Caller` service must say who is calling
     (`… by Caller("shop.orders")`); leaving it out fails `tsc` instead of being
-    reported ([accuser/bynk#1978](https://github.com/accuser/bynk/issues/1978)).
+    reported ([bynk-lang/bynk#1978](https://github.com/bynk-lang/bynk/issues/1978)).
   - A test compares a result with `expect r is Ok("…")`, because
     `expect r == Ok("…")` is type-checked against the case's own result type
-    ([accuser/bynk#1979](https://github.com/accuser/bynk/issues/1979)).
+    ([bynk-lang/bynk#1979](https://github.com/bynk-lang/bynk/issues/1979)).
   - `releaseStale` projects each map entry into a `Stale` record before
     collecting it, because folding a `List[MapEntry]` emits an unimported type
-    ([accuser/bynk#1977](https://github.com/accuser/bynk/issues/1977)).
+    ([bynk-lang/bynk#1977](https://github.com/bynk-lang/bynk/issues/1977)).
 - **One provider per capability.** There is no way to pick a provider per
   environment, so `CardProcessor` reads `PAYMENTS_PROCESSOR` and chooses at
   run time. The fake is a pure function rather than a provider of its own.
@@ -210,7 +210,7 @@ used. Set `PAYMENTS_API_URL` to point the gateway at a sandbox.
 `bynk deploy` won't warn if a payments secret is missing. Its list of the
 secrets each Worker reads leaves out `PAYMENTS_PROCESSOR` (read in a provider)
 and the gateway binding's `PAYMENTS_API_KEY` and `PAYMENTS_API_URL`, yet claims
-to be complete ([accuser/bynk#1976](https://github.com/accuser/bynk/issues/1976)).
+to be complete ([bynk-lang/bynk#1976](https://github.com/bynk-lang/bynk/issues/1976)).
 `deploy.yml` checks the two required ones itself.
 
 ## License

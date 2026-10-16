@@ -1,6 +1,6 @@
 # Deploy the shop to Cloudflare Workers with bynk-deploy.
 #
-# MANUAL ONLY until accuser/bynk#1961 is fixed: `bynk deploy` rejects the
+# MANUAL ONLY until bynk-lang/bynk#1961 is fixed: `bynk deploy` rejects the
 # events from orders to the ledger as a Service Binding cycle, so a dry run on
 # every pull request and a deploy on every push would both fail. Restore the
 # `push` and `pull_request` triggers when it is.
