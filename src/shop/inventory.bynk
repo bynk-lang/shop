@@ -1,5 +1,6 @@
 context shop.inventory
 
+uses shop.values
 consumes bynk { Clock, Logger }
 exports transparent { StockError, HoldError }
 
@@ -17,12 +18,12 @@ type HoldError = enum { NoHold }
 ---
 Stock set aside for one order while its payment is taken, and when.
 ---
-type Hold = { qty: Int, at: Instant }
+type Hold = { order: OrderId, qty: Int, at: Instant }
 
 ---
 A hold the sweeper has found too old, with the order it was made for.
 ---
-type Stale = { order: String, qty: Int }
+type Stale = { order: OrderId, qty: Int }
 
 ---
 How long a hold may stand before the sweeper releases it. Placing an order
@@ -36,7 +37,7 @@ The stock of one product. Each `sku` keys its own `Inventory` instance (a
 Cloudflare Durable Object), so products never contend with each other.
 
 `available` is what can still be sold. A reservation moves units out of it
-into `holds`, keyed by order id and stamped with the time, until the order
+into `holds`, keyed by order id (as text: see `skuRef`) and stamped with the time, until the order
 commits them (sold) or releases them (back to `available`). The stamp is what
 lets the sweeper find a hold whose request never came back.
 
@@ -46,7 +47,7 @@ that forgets to fail at the commit point instead of persisting a negative
 balance.
 ---
 agent Inventory {
-	key sku: String
+	key sku: Sku
 
 	store available: Cell[Int]
 	store holds: Map[String, Hold]
@@ -54,13 +55,13 @@ agent Inventory {
 	invariant available_non_negative:
 		available >= 0
 
-	on call restock(qty: Int) -> Effect[Int] {
+	on call restock(qty: Quantity) -> Effect[Int] {
 		let _ <- available.update((v) => v + qty)
 		available
 	}
 
-	on call reserve(order: String, qty: Int) -> Effect[Result[(), StockError]] given Clock {
-		let already <- holds.contains(order)
+	on call reserve(order: OrderId, qty: Quantity) -> Effect[Result[(), StockError]] given Clock {
+		let already <- holds.contains(orderRef(order))
 		if already {
 			Ok(())
 		} else {
@@ -69,29 +70,29 @@ agent Inventory {
 			} else {
 				let now <- Clock.now()
 				let _ <- available.update((v) => v - qty)
-				let _ <- holds.put(order, Hold { qty: qty, at: now })
+				let _ <- holds.put(orderRef(order), Hold { order: order, qty: qty, at: now })
 				Ok(())
 			}
 		}
 	}
 
-	on call commit(order: String) -> Effect[Result[(), HoldError]] {
-		let held <- holds.get(order)
+	on call commit(order: OrderId) -> Effect[Result[(), HoldError]] {
+		let held <- holds.get(orderRef(order))
 		match held {
 			None => Err(NoHold),
 			Some(_) => {
-				let _ <- holds.remove(order)
+				let _ <- holds.remove(orderRef(order))
 				Ok(())
 			},
 		}
 	}
 
-	on call release(order: String) -> Effect[Int] {
-		let held <- holds.get(order)
+	on call release(order: OrderId) -> Effect[Int] {
+		let held <- holds.get(orderRef(order))
 		match held {
 			None => available,
 			Some(h) => {
-				let _ <- holds.remove(order)
+				let _ <- holds.remove(orderRef(order))
 				let _ <- available.update((v) => v + h.qty)
 				available
 			},
@@ -104,11 +105,11 @@ agent Inventory {
 	---
 	on call releaseStale(cutoff: Instant) -> Effect[Int] {
 		let stale <- holds.entries.filter((e) => e.value.at < cutoff).map((e) => Stale {
-			order: e.key,
+			order: e.value.order,
 			qty: e.value.qty,
 		}).collect()
 		let units = stale.fold(0, (n, h) => n + h.qty)
-		let _ <- stale.foldEff((), (done, h) => holds.remove(h.order))
+		let _ <- stale.foldEff((), (done, h) => holds.remove(orderRef(h.order)))
 		let _ <- available.update((v) => v + units)
 		units
 	}
@@ -125,17 +126,13 @@ instances to visit: Durable Objects cannot be listed.
 agent Catalogue {
 	key id: String
 
-	store skus: Map[String, Instant]
+	store skus: Map[String, Sku]
 
-	on call add(sku: String) -> Effect[()] given Clock {
-		let known <- skus.contains(sku)
-		if !known {
-			let now <- Clock.now()
-			let _ <- skus.put(sku, now)
-		}
+	on call add(sku: Sku) -> Effect[()] {
+		let _ <- skus.put(skuRef(sku), sku)
 	}
 
-	on call all() -> Effect[List[String]] { skus.keys.collect() }
+	on call all() -> Effect[List[Sku]] { skus.values.collect() }
 }
 
 ---
@@ -145,32 +142,32 @@ Binding, so a handler can tell who is asking. Nothing outside the system can
 reach these: a Service Binding is an internal channel.
 ---
 service restock {
-	on call(sku: String, qty: Int) -> Effect[Int] by c: Caller {
+	on call(sku: Sku, qty: Quantity) -> Effect[Int] by c: Caller {
 		let _ <- Catalogue("all").add(sku)
 		Inventory(sku).restock(qty)
 	}
 }
 
 service reserve {
-	on call(sku: String, order: String, qty: Int) -> Effect[Result[(), StockError]] by c: Caller {
-		Inventory(sku).reserve(order, qty)
-	}
+	on call(
+		sku: Sku,
+		order: OrderId,
+		qty: Quantity
+	) -> Effect[Result[(), StockError]] by c: Caller { Inventory(sku).reserve(order, qty) }
 }
 
 service commit {
-	on call(sku: String, order: String) -> Effect[Result[(), HoldError]] by c: Caller {
+	on call(sku: Sku, order: OrderId) -> Effect[Result[(), HoldError]] by c: Caller {
 		Inventory(sku).commit(order)
 	}
 }
 
 service release {
-	on call(sku: String, order: String) -> Effect[Int] by c: Caller {
-		Inventory(sku).release(order)
-	}
+	on call(sku: Sku, order: OrderId) -> Effect[Int] by c: Caller { Inventory(sku).release(order) }
 }
 
 service level {
-	on call(sku: String) -> Effect[Int] by c: Caller { Inventory(sku).level() }
+	on call(sku: Sku) -> Effect[Int] by c: Caller { Inventory(sku).level() }
 }
 
 ---

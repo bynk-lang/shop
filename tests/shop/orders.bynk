@@ -3,49 +3,65 @@ suite shop.orders
 -- the other contexts around it; that flow is covered by e2e/scenarios.sh.
 
 case "a new order is pending" {
-	let v <- Order("o1").view()
-	expect v.status == "pending"
+	let v <- Order(orderIdFrom("o1")).view()
+	expect v.status == Pending
+	expect v.line is None
 }
 
 case "opening an order records it and moves it to opened" {
-	let r <- Order("o2").open("alice", "widget", 3, 2500)
+	let id = orderIdFrom("o2")
+	let line = OrderLine { sku: skuFrom("widget"), qty: 3, cents: 2500 }
+	let r <- Order(id).open("alice", line)
 	expect r is Ok(_)
-	let v <- Order("o2").view()
-	expect v.status == "opened"
+	let v <- Order(id).view()
+	expect v.status == Opened
 	expect v.owner == "alice"
-	expect v.qty == 3
-	expect v.cents == 2500
+	expect v.line == Some(line)
 }
 
 case "an order is decided once: opening it again is refused" {
-	let _ <- Order("o3").open("alice", "widget", 3, 2500)
-	let again <- Order("o3").open("bob", "gadget", 1, 100)
+	let id = orderIdFrom("o3")
+	let _ <- Order(id).open("alice", OrderLine { sku: skuFrom("widget"), qty: 3, cents: 2500 })
+	let again <- Order(id).open("bob", OrderLine { sku: skuFrom("widget"), qty: 1, cents: 100 })
 	expect again is Err(_)
-	let v <- Order("o3").view()
+	let v <- Order(id).view()
 	expect v.owner == "alice"
 }
 
 case "a confirmed order is placed, and can be cancelled once" {
-	let _ <- Order("o4").open("alice", "widget", 3, 2500)
-	let _ <- Order("o4").confirm()
-	let placed <- Order("o4").view()
-	expect placed.status == "placed"
-	let first <- Order("o4").cancel()
+	let id = orderIdFrom("o4")
+	let _ <- Order(id).open("alice", OrderLine { sku: skuFrom("widget"), qty: 3, cents: 2500 })
+	let _ <- Order(id).confirm()
+	let placed <- Order(id).view()
+	expect placed.status == Placed
+	let first <- Order(id).cancel()
 	expect first is Ok(_)
-	let second <- Order("o4").cancel()
+	let second <- Order(id).cancel()
 	expect second is Err(_)
 }
 
 case "a rejected order cannot be cancelled" {
-	let _ <- Order("o5").open("alice", "widget", 3, 2500)
-	let _ <- Order("o5").reject()
-	let r <- Order("o5").cancel()
+	let id = orderIdFrom("o5")
+	let _ <- Order(id).open("alice", OrderLine { sku: skuFrom("widget"), qty: 3, cents: 2500 })
+	let _ <- Order(id).reject()
+	let r <- Order(id).cancel()
 	expect r is Err(_)
-	let v <- Order("o5").view()
-	expect v.status == "rejected"
+	let v <- Order(id).view()
+	expect v.status == Rejected
 }
 
 case "an order that was never placed cannot be cancelled" {
-	let r <- Order("o6").cancel()
+	let r <- Order(orderIdFrom("o6")).cancel()
 	expect r is Err(_)
+}
+
+case "someone else's order is not shown, nor is one never opened" {
+	let id = orderIdFrom("o7")
+	let line = OrderLine { sku: skuFrom("widget"), qty: 3, cents: 2500 }
+	let _ <- Order(id).open("alice", line)
+	let o <- Order(id).view()
+	expect shown(id, o, "alice") is Some(_)
+	expect shown(id, o, "bob") is None
+	let fresh <- Order(orderIdFrom("o8")).view()
+	expect shown(id, fresh, "alice") is None
 }

@@ -77,7 +77,7 @@ need a token with an `admin` claim.
 
 | Route | Who | What |
 | --- | --- | --- |
-| `PUT /orders/:id` | customer | Place order `:id`: `{"sku":"widget","qty":3,"cents":2500}`. `201` placed, `409` out of stock or already decided, `422` payment declined. The id is the customer's, so placing it twice cannot place it twice. |
+| `PUT /orders/:id` | customer | Place order `:id`: `{"sku":"widget","qty":3,"cents":2500}`. `201` placed, `400` if a field fails its type (a zero `qty`, an empty `sku`), `409` out of stock or already decided, `422` payment declined. The id is the customer's, so placing it twice cannot place it twice. |
 | `GET /orders/:id` | the order's customer | The order. Someone else's is a `404`. |
 | `POST /orders/:id/cancel` | the order's customer | Cancel a placed order and return its stock. |
 | `PUT /stock/:sku` | admin | Add `{"qty":10}` to a product's stock. |
@@ -164,6 +164,11 @@ is written down here rather than hidden:
   emits TypeScript that does not compile
   ([accuser/bynk#1975](https://github.com/accuser/bynk/issues/1975)). The
   binding is tested with Node instead ([`tests/bindings`](tests/bindings)).
+- **A map can't be keyed by an opaque type.** `Map[Sku, …]` checks clean, but
+  collecting its keys emits TypeScript that `tsc` rejects
+  ([accuser/bynk#1982](https://github.com/accuser/bynk/issues/1982)). The
+  inventory's holds and the catalogue are keyed by text (`orderRef`,
+  `skuRef` in `shop.values`) and keep the opaque value inside the entry.
 - **Three smaller workarounds in the tests and the sweep.** Each passes
   `bynkc check` and then fails, so the shop does it the other way:
   - A test that calls a `by c: Caller` service must say who is calling

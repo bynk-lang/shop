@@ -3,20 +3,20 @@ suite shop.payments
 
 case "a charge within the limit is approved" {
 	stub Secrets.get("PAYMENTS_PROCESSOR") returns Some("fake")
-	let r <- authorise.call("o1", 2500) by Caller("shop.orders")
+	let r <- authorise.call(orderIdFrom("o1"), 2500) by Caller("shop.orders")
 	expect r is Ok("fake_o1")
 	expect Gateway.authorise never called
 }
 
 case "a charge over 1,000.00 is declined" {
 	stub Secrets.get("PAYMENTS_PROCESSOR") returns Some("fake")
-	let r <- authorise.call("o1", 100001) by Caller("shop.orders")
+	let r <- authorise.call(orderIdFrom("o1"), 100001) by Caller("shop.orders")
 	expect r is Err(Declined)
 }
 
 case "the limit itself is approved" {
 	stub Secrets.get("PAYMENTS_PROCESSOR") returns Some("fake")
-	let r <- authorise.call("o1", 100000) by Caller("shop.orders")
+	let r <- authorise.call(orderIdFrom("o1"), 100000) by Caller("shop.orders")
 	expect r is Ok(_)
 }
 
@@ -24,26 +24,26 @@ case "the limit itself is approved" {
 
 case "without the fake, a charge goes to the gateway with the order as its reference" {
 	stub Gateway.authorise(_, _) returns Ok("auth_123")
-	let r <- authorise.call("o1", 2500) by Caller("shop.orders")
+	let r <- authorise.call(orderIdFrom("o1"), 2500) by Caller("shop.orders")
 	expect r is Ok("auth_123")
 	expect Gateway.authorise called once with reference == "o1" && cents == 2500
 }
 
 case "a card the processor declines is declined" {
 	stub Gateway.authorise(_, _) returns Err(GatewayError.Declined)
-	let r <- authorise.call("o1", 2500) by Caller("shop.orders")
+	let r <- authorise.call(orderIdFrom("o1"), 2500) by Caller("shop.orders")
 	expect r is Err(PayError.Declined)
 }
 
 case "a processor that cannot be reached is unavailable, not declined" {
 	stub Gateway.authorise(_, _) returns Err(GatewayError.Unavailable)
-	let r <- authorise.call("o1", 2500) by Caller("shop.orders")
+	let r <- authorise.call(orderIdFrom("o1"), 2500) by Caller("shop.orders")
 	expect r is Err(PayError.Unavailable)
 }
 
 case "an authorised payment is recorded against its order" {
 	stub Gateway.authorise(_, _) returns Ok("auth_123")
-	let _ <- authorise.call("o1", 2500) by Caller("shop.orders")
+	let _ <- authorise.call(orderIdFrom("o1"), 2500) by Caller("shop.orders")
 	let p <- Payment("auth_123").view()
 	expect p.status == "authorised"
 	expect p.order == "o1"
@@ -52,7 +52,7 @@ case "an authorised payment is recorded against its order" {
 
 case "a declined payment records nothing" {
 	stub Gateway.authorise(_, _) returns Err(GatewayError.Declined)
-	let _ <- authorise.call("o1", 2500) by Caller("shop.orders")
+	let _ <- authorise.call(orderIdFrom("o1"), 2500) by Caller("shop.orders")
 	let p <- Payment("auth_123").view()
 	expect p.status == "unknown"
 }
