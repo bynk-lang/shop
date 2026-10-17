@@ -16,7 +16,8 @@ The books: how many orders are standing, and for how much. One instance, since
 the totals are one number each.
 
 Events are delivered at least once, so each handler asks `Idempotency` whether
-it has seen this event id before it counts it again.
+it has seen this event id before it counts it again. An event carries the unit
+price, so the amount an order adds to the books is `qty * cents`.
 ---
 agent Books {
 	key id: String
@@ -25,16 +26,16 @@ agent Books {
 	store units: Cell[Int]
 	store cents: Cell[Int]
 
-	on call placed(qty: Int, price: Int) -> Effect[()] {
+	on call placed(qty: Int, amount: Int) -> Effect[()] {
 		let _ <- orders.update((v) => v + 1)
 		let _ <- units.update((v) => v + qty)
-		let _ <- cents.update((v) => v + price)
+		let _ <- cents.update((v) => v + amount)
 	}
 
-	on call cancelled(qty: Int, price: Int) -> Effect[()] {
+	on call cancelled(qty: Int, amount: Int) -> Effect[()] {
 		let _ <- orders.update((v) => v - 1)
 		let _ <- units.update((v) => v - qty)
-		let _ <- cents.update((v) => v - price)
+		let _ <- cents.update((v) => v - amount)
 	}
 
 	on call totals() -> Effect[Totals] { Totals { orders: orders, units: units, cents: cents } }
@@ -46,7 +47,7 @@ service OnPlaced from Events(OrderPlaced) {
 		match seen {
 			Some(_) => (),
 			None => {
-				let _ <- Books("main").placed(e.qty, e.cents)
+				let _ <- Books("main").placed(e.qty, e.qty * e.cents)
 				let _ <- Idempotency.remember[()](env.eventId, (), 7.days)
 			},
 		}
@@ -59,7 +60,7 @@ service OnCancelled from Events(OrderCancelled) {
 		match seen {
 			Some(_) => (),
 			None => {
-				let _ <- Books("main").cancelled(e.qty, e.cents)
+				let _ <- Books("main").cancelled(e.qty, e.qty * e.cents)
 				let _ <- Idempotency.remember[()](env.eventId, (), 7.days)
 			},
 		}

@@ -128,7 +128,7 @@ expect 409 "" "$(call "$alice" POST "$orders/orders/o1/cancel")"
 
 echo "the ledger, fed by events, ends with one standing order (o4)"
 # Events are delivered asynchronously, so poll for the settled totals.
-want='1 2 1000'
+want='1 2 2000'
 got=""
 r=""
 for _ in $(seq 1 20); do
