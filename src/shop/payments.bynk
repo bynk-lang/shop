@@ -151,18 +151,18 @@ fn label(s: PaymentStatus) -> String {
 
 ---
 Authorise a charge for an order, and record the payment so the processor's
-webhooks have something to update.
+webhooks have something to update. `amount` is what the whole order comes to.
 ---
 service authorise {
 	on call(
 		order: OrderId,
-		cents: Cents
+		amount: Cents
 	) -> Effect[Result[String, PayError]] by c: Caller given Processor {
 		let reference = orderRef(order)
-		let r <- Processor.charge(reference, cents)
+		let r <- Processor.charge(reference, amount)
 		match r {
 			Ok(id) => {
-				let _ <- Payment(id).authorised(reference, cents)
+				let _ <- Payment(id).authorised(reference, amount)
 				Ok(id)
 			},
 			Err(e) => Err(e),
