@@ -24,12 +24,17 @@ type = "Sku"
 default = false
 
 [events."shop.orders.OrderPlaced"]
-schema = 1
+schema = 2
 
 [[events."shop.orders.OrderPlaced".fields]]
 name = "cents"
 type = "Cents"
 default = false
+
+[[events."shop.orders.OrderPlaced".fields]]
+name = "customer"
+type = "String"
+default = true
 
 [[events."shop.orders.OrderPlaced".fields]]
 name = "orderId"

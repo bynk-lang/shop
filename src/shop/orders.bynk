@@ -23,7 +23,13 @@ actor Admin = Customer where hasClaim("admin")
 Facts other contexts can react to. The ledger subscribes; orders neither knows
 nor cares who listens.
 ---
-event OrderPlaced = { orderId: OrderId, sku: Sku, qty: Quantity, cents: Cents }
+event OrderPlaced = {
+	orderId: OrderId,
+	sku: Sku,
+	qty: Quantity,
+	cents: Cents,
+	customer: String = "",
+}
 
 event OrderCancelled = { orderId: OrderId, sku: Sku, qty: Quantity, cents: Cents }
 
@@ -188,7 +194,7 @@ service api from http {
 								Conflict("out of stock")
 							},
 							Ok(_) => {
-								let paid <- Pay.authorise(id, body.cents)
+								let paid <- Pay.authorise(id, t)
 								match paid {
 									Err(why) => {
 										let _ <- Stock.release(body.sku, id)
@@ -218,6 +224,7 @@ service api from http {
 													sku: body.sku,
 													qty: body.qty,
 													cents: body.cents,
+													customer: c.identity,
 												})
 												~> Logger.info("placed order for \(t) cents")
 												Created(OrderView {
