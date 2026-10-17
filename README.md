@@ -155,6 +155,15 @@ is written down here rather than hidden:
   route a Worker has serves the internal paths too, so payments' `authorise`
   and the ledger's event deliveries stay reachable through their public
   routes until the fix is released.
+- **The Workers build doesn't type-check, and so there is no `system` suite.**
+  `shop.ledger` subscribes to events whose fields are commons types (`Sku`,
+  `Cents`, …), and the serialiser Bynk emits for it names the orders
+  context's namespace without importing it
+  ([bynk-lang/bynk#2027](https://github.com/bynk-lang/bynk/issues/2027)).
+  `bynk dev` and `bynk deploy` still work, because Wrangler's bundler strips
+  types without checking them. But a `system` test suite compiles every
+  context as a Worker and type-checks it, so the shop can't have one until
+  the fix lands.
 - **An agent can't call another context.** The `Order` agent would naturally
   call the inventory itself, but that faults at runtime
   ([bynk-lang/bynk#1960](https://github.com/bynk-lang/bynk/issues/1960)), so the
