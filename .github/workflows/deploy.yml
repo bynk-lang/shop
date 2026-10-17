@@ -80,17 +80,34 @@ jobs:
         id: deploy
         if: steps.secrets.outputs.configured == 'true'
         uses: bynk-lang/bynk-deploy@v2
+        # Declared secrets (an actor's `auth` secret) are read from the
+        # environment and set only on the context whose actor declares them:
+        # AUTH_JWT_SECRET on orders, PAYMENTS_WEBHOOK_SECRET on payments.
+        # Names passed in `secrets` instead would go to every context.
+        env:
+          AUTH_JWT_SECRET: ${{ secrets.AUTH_JWT_SECRET }}
+          PAYMENTS_WEBHOOK_SECRET: ${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
         with:
           version: ${{ env.BYNK_VERSION }}
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Set on every deployed context. The Customer and Admin actors read
-          # AUTH_JWT_SECRET; the payments context reads the rest. Leaving
-          # PAYMENTS_PROCESSOR unset is what selects the real processor.
+
+      # The gateway's key. At 0.330.4 the plan can't see that the gateway's
+      # binding reads it (bynk-lang/bynk#1976), and a supplied name goes to
+      # every context in the run, so it is set in a run for payments alone.
+      # Leaving PAYMENTS_PROCESSOR unset is what selects the real processor.
+      - name: Set the payment processor's key
+        if: steps.secrets.outputs.configured == 'true'
+        uses: bynk-lang/bynk-deploy@v2
+        env:
+          PAYMENTS_WEBHOOK_SECRET: ${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
+        with:
+          version: ${{ env.BYNK_VERSION }}
+          context: shop.payments
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           secrets: |
-            AUTH_JWT_SECRET=${{ secrets.AUTH_JWT_SECRET }}
             PAYMENTS_API_KEY=${{ secrets.PAYMENTS_API_KEY }}
-            PAYMENTS_WEBHOOK_SECRET=${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
 
       # The action never commits. When the deploy changes bynk.deploy.lock (the
       # first deploy records the context), keep the new file to commit.
