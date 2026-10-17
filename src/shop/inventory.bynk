@@ -39,7 +39,8 @@ Cloudflare Durable Object), so products never contend with each other.
 `available` is what can still be sold. A reservation moves units out of it
 into `holds`, keyed by order id (as text: see `skuRef`) and stamped with the time, until the order
 commits them (sold) or releases them (back to `available`). The stamp is what
-lets the sweeper find a hold whose request never came back.
+lets the sweeper find a hold whose request never came back. `received` is the
+warehouse's deliveries, by their own ids, for 30 days.
 
 The invariant is the contract: whatever the handlers do, stock never goes
 negative. `reserve` guards for it, and the invariant makes a future handler
@@ -51,6 +52,7 @@ agent Inventory {
 
 	store available: Cell[Int]
 	store holds: Map[String, Hold]
+	store received: Log[String] @retain(30.days)
 
 	invariant available_non_negative:
 		available >= 0
@@ -73,6 +75,20 @@ agent Inventory {
 				let _ <- holds.put(orderRef(order), Hold { order: order, qty: qty, at: now })
 				Ok(())
 			}
+		}
+	}
+
+	---
+	Stock a delivery once, however many times it arrives.
+	---
+	on call receive(delivery: String, qty: Quantity) -> Effect[Int] given Clock {
+		let seen <- received.since(Instant.fromEpochMillis(0)).any((id) => id == delivery)
+		if seen {
+			available
+		} else {
+			let _ <- received.append(delivery)
+			let _ <- available.update((v) => v + qty)
+			available
 		}
 	}
 
@@ -187,5 +203,24 @@ service sweeper from cron {
 		})
 		do if units > 0 { Logger.info("released \(units) units from stale holds") }
 		Ok(())
+	}
+}
+
+---
+A delivery from the warehouse: its own id, and so many units of one sku.
+---
+type Delivery = { id: String, sku: Sku, qty: Quantity }
+
+---
+The warehouse's system announces each delivery on a Cloudflare Queue. The queue
+delivers at least once and retries a message that fails, so the inventory
+counts a delivery by its id and never stocks it twice. Bynk can't send to a
+queue yet, so the producer is the warehouse's own Worker.
+---
+service deliveries from queue("stock-deliveries") {
+	on message(d: Delivery) -> Effect[QueueResult] {
+		let _ <- Catalogue("all").add(d.sku)
+		let _ <- Inventory(d.sku).receive(d.id, d.qty)
+		Ack
 	}
 }

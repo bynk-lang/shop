@@ -12,7 +12,7 @@ on every new Bynk release.
 ```mermaid
 flowchart LR
   customer(["customer / admin<br/>(bearer token)"]) -- HTTP --> orders
-  orders["<b>shop.orders</b><br/>Order agent: a state machine<br/>HTTP API"] -- "reserve / commit / release / restock / level<br/>(Service Binding)" --> inventory["<b>shop.inventory</b><br/>Inventory agent: holds, invariant<br/>cron: release stale holds"]
+  orders["<b>shop.orders</b><br/>Order agent: a state machine<br/>HTTP API"] -- "reserve / commit / release / restock / level<br/>(Service Binding)" --> inventory["<b>shop.inventory</b><br/>Inventory agent: holds, invariant<br/>cron: release stale holds<br/>queue: warehouse deliveries"]
   orders -- "authorise<br/>(Service Binding)" --> payments["<b>shop.payments</b><br/>Processor capability<br/>Payment agent, webhook"]
   payments -- "given Gateway<br/>(in process)" --> gateway["<b>shop.gateway</b><br/>adapter: TypeScript binding<br/>given Fetch, Secrets"]
   gateway -- "HTTPS" --> processor(["payment processor"])
@@ -23,7 +23,7 @@ flowchart LR
 | Context | Shows | Source |
 | --- | --- | --- |
 | `shop.orders` | an agent as a **state machine** (`Pending → Opened → Placed / Rejected → Cancelled`); a service that coordinates other contexts; **authentication and authorisation** (a `Customer`, and an `Admin` refined by a token claim: `401` vs `403`); emitting **events** | [`orders.bynk`](src/shop/orders.bynk) |
-| `shop.inventory` | an agent with an **invariant** (`available >= 0`) enforced at every commit; a **`Map`** of holds stamped with the **`Clock`**, read back with a **`Query`**; a **cron** entry point that releases stale holds; `on call` services with the **`Caller`** identity | [`inventory.bynk`](src/shop/inventory.bynk) |
+| `shop.inventory` | an agent with an **invariant** (`available >= 0`) enforced at every commit; a **`Map`** of holds stamped with the **`Clock`**, read back with a **`Query`**; a **cron** entry point that releases stale holds; a **queue** consumer for the warehouse's deliveries, deduped by id in a **`Log`**; `on call` services with the **`Caller`** identity | [`inventory.bynk`](src/shop/inventory.bynk) |
 | `shop.payments` | a **capability** (`Processor`) whose provider is composed from an adapter's capability and `Secrets`, with a fake for tests and local runs; a `Payment` agent whose history is a **`Log`** with **`@retain`**; a webhook authenticated by a **`Signature`** actor | [`payments.bynk`](src/shop/payments.bynk) |
 | `shop.gateway` | an **adapter**: the `Gateway` capability declared in Bynk, implemented in a **TypeScript binding** against a payment processor's HTTP API, with `Fetch` and `Secrets` as capability dependencies | [`gateway.bynk`](src/shop/gateway.bynk), [`gateway.binding.ts`](src/shop/gateway.binding.ts) |
 | `shop.ledger` | **event subscribers** (`from Events(…)`), made safe for at-least-once delivery with `Idempotency` | [`ledger.bynk`](src/shop/ledger.bynk) |
@@ -209,6 +209,10 @@ is written down here rather than hidden:
 - **The gateway can't void an authorisation yet.** If the sweeper releases a
   hold while its payment is being taken, the order is rejected but the
   authorisation stands until the processor lets it lapse.
+- **Bynk can't send to a queue.** Producing queue messages isn't a first-party
+  capability at 0.330.4, so `stock-deliveries` is fed by the warehouse's own
+  Worker, and nothing in this repository can put a message on it under
+  `bynk dev`. The consumer is tested with `deliveries.message(…)`.
 - **The sweeper visits every sku.** Durable Objects can't be listed, so a
   `Catalogue` agent records each sku that has been stocked, and every run asks
   each one for its stale holds. That is fine at this size; a large catalogue
