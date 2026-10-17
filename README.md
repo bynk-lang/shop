@@ -150,11 +150,12 @@ is written down here rather than hidden:
   between contexts with a key per pair
   ([bynk-lang/bynk#2004](https://github.com/bynk-lang/bynk/pull/2004),
   [#2012](https://github.com/bynk-lang/bynk/pull/2012)), not yet released.
-  Until then, turn off the `workers.dev` route for `shop.inventory`, which has
-  no public routes. That doesn't help `shop.payments` or `shop.ledger`: every
-  route a Worker has serves the internal paths too, so payments' `authorise`
-  and the ledger's event deliveries stay reachable through their public
-  routes until the fix is released.
+  Turning the `workers.dev` address off doesn't last: the generated
+  `wrangler.toml` sets neither `routes` nor `workers_dev`, so Wrangler turns
+  it back on at every deploy. And it wouldn't help `shop.payments` or
+  `shop.ledger`, because every route a Worker has serves the internal paths
+  too. Deploy the shop to try it, not to take real money, until the fix is
+  released.
 - **The Workers build doesn't type-check, and so there is no `system` suite.**
   `shop.ledger` subscribes to events whose fields are commons types (`Sku`,
   `Cents`, …), and the serialiser Bynk emits for it names the orders
@@ -233,7 +234,15 @@ used. Set `PAYMENTS_API_URL` to point the gateway at a sandbox.
 secrets each Worker reads leaves out `PAYMENTS_PROCESSOR` (read in a provider)
 and the gateway binding's `PAYMENTS_API_KEY` and `PAYMENTS_API_URL`, yet claims
 to be complete ([bynk-lang/bynk#1976](https://github.com/bynk-lang/bynk/issues/1976)).
-`deploy.yml` checks the two required ones itself.
+`deploy.yml` checks the two required ones itself. If the key is missing
+anyway, every order is a `503` and payments logs `processor unavailable for
+<order>`.
+
+`deploy.yml` sets `PAYMENTS_API_KEY` in a second run, for `shop.payments`
+alone. A name passed to `bynk deploy` with `--secrets-file` or `--secret` is
+set on every context in the run, and the processor's key has no business on
+inventory or orders. The actors' secrets come from the environment instead,
+which `bynk deploy` sets only on the context that declares them.
 
 ## License
 

@@ -39,6 +39,8 @@ case "a processor that cannot be reached is unavailable, not declined" {
 	stub Gateway.authorise(_, _) returns Err(GatewayError.Unavailable)
 	let r <- authorise.call(orderIdFrom("o1"), 2500) by Caller("shop.orders")
 	expect r is Err(PayError.Unavailable)
+	expect Logger.error called once
+	expect Logger.error called with msg == "processor unavailable for o1"
 }
 
 case "an authorised payment is recorded against its order" {
