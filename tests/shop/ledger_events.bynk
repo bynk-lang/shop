@@ -1,0 +1,22 @@
+suite shop.ledger
+-- The subscribers, given events as the fan-out would deliver them.
+
+case "an event delivered twice is counted once" {
+	let e = OrderPlaced {
+		orderId: orderIdFrom("o1"),
+		sku: skuFrom("widget"),
+		qty: 3,
+		cents: 2500,
+		customer: "alice",
+	}
+	let env = EventEnvelope {
+		eventId: "evt_1",
+		publisherId: "shop.orders",
+		emittedAt: Instant.fromEpochMillis(0),
+		schemaVersion: 2,
+	}
+	let _ <- OnPlaced.event(e, env)
+	let _ <- OnPlaced.event(e, env)
+	let t <- Books("main").totals()
+	expect t == Totals { orders: 1, units: 3, cents: 7500 }
+}

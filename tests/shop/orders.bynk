@@ -1,6 +1,7 @@
 suite shop.orders
 -- The order's state machine, driven directly. The `api` service coordinates
--- the other contexts around it; that flow is covered by e2e/scenarios.sh.
+-- the other contexts around it; that flow is covered by orders_system.bynk
+-- and e2e/scenarios.sh.
 
 case "a new order is pending" {
 	let v <- Order(orderIdFrom("o1")).view()

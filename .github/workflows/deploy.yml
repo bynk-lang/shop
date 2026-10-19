@@ -1,13 +1,7 @@
 # Deploy the shop to Cloudflare Workers with bynk-deploy.
 #
-# MANUAL ONLY until bynk-lang/bynk#1961 is fixed: `bynk deploy` rejects the
-# events from orders to the ledger as a Service Binding cycle, so a dry run on
-# every pull request and a deploy on every push would both fail. Restore the
-# `push` and `pull_request` triggers when it is.
-#
-# When enabled, pull requests get an offline dry run (the plan, no
-# credentials) and a push to main deploys for real, once these repository
-# secrets exist:
+# Pull requests get an offline dry run (the plan, no credentials). A push to
+# main deploys for real, once these repository secrets exist:
 #   CLOUDFLARE_API_TOKEN   a Cloudflare API token with Workers deploy scope
 #   CLOUDFLARE_ACCOUNT_ID  the Cloudflare account ID
 #   AUTH_JWT_SECRET        the key the Customer and Admin actors verify tokens with
@@ -18,6 +12,9 @@
 name: Deploy
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -28,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BYNK_VERSION: 0.330.4
+  BYNK_VERSION: 0.371.3
 
 jobs:
   plan:
@@ -92,9 +89,10 @@ jobs:
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # The gateway's key. At 0.330.4 the plan can't see that the gateway's
-      # binding reads it (bynk-lang/bynk#1976), and a supplied name goes to
-      # every context in the run, so it is set in a run for payments alone.
+      # The gateway's key. The plan can't see that the gateway's TypeScript
+      # binding reads it (it says payments' secrets are incomplete), and a
+      # supplied name goes to every context in the run, so it is set in a run
+      # for payments alone.
       # Leaving PAYMENTS_PROCESSOR unset is what selects the real processor.
       - name: Set the payment processor's key
         if: steps.secrets.outputs.configured == 'true'

@@ -1,7 +1,7 @@
 // Tests for the TypeScript half of the `shop.gateway` adapter. A binding is
 // TypeScript, so it is tested as TypeScript: against fake `Fetch` and
 // `Secrets` capabilities, checking the request it sends and how it reads the
-// processor's answers. (A Bynk test cannot reach the binding at 0.330.4.)
+// processor's answers: the edge cases easiest to pin down in TypeScript.
 //
 // Run after `bynkc test .`, which compiles the project to out-js/:
 //
