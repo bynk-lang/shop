@@ -1,0 +1,24 @@
+suite shop.payments as system {
+	uses shop.values
+
+	case "with no processor configured, a charge fails closed over the wire" {
+		let r <- shop.payments.authorise(orderIdFrom("o1"), 2500) by Caller("shop.orders")
+		expect r is Err(PayError.Unavailable)
+	}
+
+	case "with the fake processor, a charge is approved over the wire" {
+		env {
+			PAYMENTS_PROCESSOR = "fake"
+		}
+		let r <- shop.payments.authorise(orderIdFrom("o1"), 2500) by Caller("shop.orders")
+		expect r is Ok("fake_o1")
+	}
+
+	case "an unsigned or forged notice is refused at the boundary" {
+		let n = WebhookEvent { id: "evt_1", event: "payment.captured", payment: "auth_unknown" }
+		let none <- webhooks.POST("/webhooks/processor", n) by Nobody
+		let forged <- webhooks.POST("/webhooks/processor", n) by Forged
+		expect none is Rejected(Unauthorized)
+		expect forged is Rejected(Unauthorized)
+	}
+}

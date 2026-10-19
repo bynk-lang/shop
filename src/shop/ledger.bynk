@@ -1,5 +1,6 @@
 context shop.ledger
 
+uses shop.values
 consumes shop.orders
 consumes bynk { Idempotency }
 

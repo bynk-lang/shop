@@ -106,6 +106,11 @@ bynk dev -- --var AUTH_JWT_SECRET:dev-secret \
 
 ## Tests
 
+- **`system` suites** ([`tests/shop`](tests/shop), `*_system.bynk`) stand the
+  contexts up as the Workers they deploy as and test across the wire: the
+  whole order flow from orders through inventory and payments, the payments
+  context with and without the fake processor, and the webhook's refusal of an
+  unsigned or forged notice.
 - **Unit tests** ([`tests/shop`](tests/shop)) drive the agents and services
   directly: stock arithmetic and the refusal that keeps it non-negative, holds
   and the sweeper (with a stubbed `Clock` and a scheduled time), every
@@ -133,76 +138,22 @@ bynk dev -- --var AUTH_JWT_SECRET:dev-secret \
   ```
 
 CI runs both on every push and pull request at a pinned Bynk version
-(`0.330.4`), so a red build means a change broke something. The canary runs
+(`0.371.3`), so a red build means a change broke something. The canary runs
 them at each new release; when a release breaks the shop it opens a `canary`
 issue here.
 
 ## What Bynk can't do for this yet
 
 Where this example works around the language, or the toolchain falls short, it
-is written down here rather than hidden:
+is written down here rather than hidden. (The shop was first written against
+Bynk 0.330.4 and worked around a dozen more; all were fixed by 0.371.3, and the
+history has them.)
 
-- **The services between contexts are reachable from outside once deployed.**
-  At 0.330.4 a context's Worker answers its `on call` services on every route
-  it has, including Cloudflare's default `workers.dev` address, and trusts the
-  caller name a request claims. So anyone who finds, say, the inventory
-  Worker's address could restock it. Bynk's main branch signs every call
-  between contexts with a key per pair
-  ([bynk-lang/bynk#2004](https://github.com/bynk-lang/bynk/pull/2004),
-  [#2012](https://github.com/bynk-lang/bynk/pull/2012)), not yet released.
-  Turning the `workers.dev` address off doesn't last: the generated
-  `wrangler.toml` sets neither `routes` nor `workers_dev`, so Wrangler turns
-  it back on at every deploy. And it wouldn't help `shop.payments` or
-  `shop.ledger`, because every route a Worker has serves the internal paths
-  too. Deploy the shop to try it, not to take real money, until the fix is
-  released.
-- **The Workers build doesn't type-check, and so there is no `system` suite.**
-  `shop.ledger` subscribes to events whose fields are commons types (`Sku`,
-  `Cents`, …), and the serialiser Bynk emits for it names the orders
-  context's namespace without importing it
-  ([bynk-lang/bynk#2027](https://github.com/bynk-lang/bynk/issues/2027)).
-  `bynk dev` and `bynk deploy` still work, because Wrangler's bundler strips
-  types without checking them. But a `system` test suite compiles every
-  context as a Worker and type-checks it, so the shop can't have one until
-  the fix lands.
-- **An agent can't call another context.** The `Order` agent would naturally
-  call the inventory itself, but that faults at runtime
-  ([bynk-lang/bynk#1960](https://github.com/bynk-lang/bynk/issues/1960)), so the
-  `api` service does the cross-context calls and the agent keeps to its own
-  state.
-- **Events and `bynk deploy` don't compose.** Orders emit to the ledger, and a
-  subscriber must consume the emitter, so the generated Service Bindings form a
-  cycle and the deploy is refused
-  ([bynk-lang/bynk#1961](https://github.com/bynk-lang/bynk/issues/1961)). Until it
-  is fixed, [`deploy.yml`](.github/workflows/deploy.yml) is manual and the
-  canary skips its deploy dry run.
-- **No `system`-tier test of the whole flow.** `bynkc test`'s `system` tier
-  stands the contexts up in process, but only `on call` services are
-  addressable, and it wires no event fan-out
-  ([bynk-lang/bynk#1959](https://github.com/bynk-lang/bynk/issues/1959)). The
-  end-to-end scenarios cover the flow against the real Workers instead.
-- **A `bynkc test` case can't reach an adapter's binding.** Promoting a case
-  to `as integration` should run the real binding, but at 0.330.4 the adapter's
-  provider is not instantiated, and a `suite` aimed at the adapter itself
-  emits TypeScript that does not compile
-  ([bynk-lang/bynk#1975](https://github.com/bynk-lang/bynk/issues/1975)). The
-  binding is tested with Node instead ([`tests/bindings`](tests/bindings)).
-- **A map can't be keyed by an opaque type.** `Map[Sku, …]` checks clean, but
-  collecting its keys emits TypeScript that `tsc` rejects
-  ([bynk-lang/bynk#1982](https://github.com/bynk-lang/bynk/issues/1982)). The
-  inventory's holds and the catalogue are keyed by text (`orderRef`,
-  `skuRef` in `shop.values`) and keep the opaque value inside the entry.
-- **Three smaller workarounds in the tests and the sweep.** Each passes
-  `bynkc check` and then fails, so the shop does it the other way:
-  - A test that calls a `by c: Caller` service must say who is calling
-    (`… by Caller("shop.orders")`); leaving it out fails `tsc` instead of being
-    reported ([bynk-lang/bynk#1978](https://github.com/bynk-lang/bynk/issues/1978)).
-  - A test compares a result with `expect r is Ok("…")`, because
-    `expect r == Ok("…")` is type-checked against the case's own result type
-    ([bynk-lang/bynk#1979](https://github.com/bynk-lang/bynk/issues/1979)).
-  - `releaseStale` projects each map entry into a `Stale` record before
-    collecting it, because folding a `List[MapEntry]` emits an unimported type
-    ([bynk-lang/bynk#1977](https://github.com/bynk-lang/bynk/issues/1977)).
+- **Events are delivered once, in the request.** The orders fan-out delivers
+  each event to the ledger before the order's response, with one attempt and
+  no retry: a failed delivery is logged and the ledger misses it. The ledger
+  dedups on the event id with `Idempotency`, whose provider remembers only as
+  long as the isolate does.
 - **One provider per capability.** There is no way to pick a provider per
   environment, so `CardProcessor` reads `PAYMENTS_PROCESSOR` and chooses at
   run time. The fake is a pure function rather than a provider of its own.
@@ -210,9 +161,9 @@ is written down here rather than hidden:
   hold while its payment is being taken, the order is rejected but the
   authorisation stands until the processor lets it lapse.
 - **Bynk can't send to a queue.** Producing queue messages isn't a first-party
-  capability at 0.330.4, so `stock-deliveries` is fed by the warehouse's own
-  Worker, and nothing in this repository can put a message on it under
-  `bynk dev`. The consumer is tested with `deliveries.message(…)`.
+  capability, so `stock-deliveries` is fed by the warehouse's own Worker, and
+  nothing in this repository can put a message on it under `bynk dev`. The
+  consumer is tested with `deliveries.message(…)`.
 - **The sweeper visits every sku.** Durable Objects can't be listed, so a
   `Catalogue` agent records each sku that has been stocked, and every run asks
   each one for its stale holds. That is fine at this size; a large catalogue
@@ -220,8 +171,9 @@ is written down here rather than hidden:
 
 ## Deploying
 
-Not yet; see above. When it works, [`deploy.yml`](.github/workflows/deploy.yml)
-needs these repository secrets:
+[`deploy.yml`](.github/workflows/deploy.yml) runs a dry run on every pull
+request, and deploys on a push to `main` once these repository secrets exist
+(until then it warns and skips):
 
 | Secret | Value |
 | --- | --- |
@@ -232,21 +184,21 @@ needs these repository secrets:
 | `PAYMENTS_WEBHOOK_SECRET` | The key the processor signs its webhooks with. |
 
 Leave `PAYMENTS_PROCESSOR` unset in a deployment, so the real processor is
-used. Set `PAYMENTS_API_URL` to point the gateway at a sandbox.
+used (the plan lists it as a `read` secret and warns that it has no value).
+Set `PAYMENTS_API_URL` to point the gateway at a sandbox.
 
-`bynk deploy` won't warn if a payments secret is missing. Its list of the
-secrets each Worker reads leaves out `PAYMENTS_PROCESSOR` (read in a provider)
-and the gateway binding's `PAYMENTS_API_KEY` and `PAYMENTS_API_URL`, yet claims
-to be complete ([bynk-lang/bynk#1976](https://github.com/bynk-lang/bynk/issues/1976)).
-`deploy.yml` checks the two required ones itself. If the key is missing
-anyway, every order is a `503` and payments logs `processor unavailable for
-<order>`.
+`bynk deploy` can't see the gateway binding's reads, `PAYMENTS_API_KEY` and
+`PAYMENTS_API_URL`, because the binding is TypeScript; its plan says payments'
+secrets are incomplete. `deploy.yml` checks the required key itself. If it is
+missing anyway, every order is a `503` and payments logs `processor
+unavailable for <order>`.
 
 `deploy.yml` sets `PAYMENTS_API_KEY` in a second run, for `shop.payments`
 alone. A name passed to `bynk deploy` with `--secrets-file` or `--secret` is
 set on every context in the run, and the processor's key has no business on
 inventory or orders. The actors' secrets come from the environment instead,
-which `bynk deploy` sets only on the context that declares them.
+which `bynk deploy` sets only on the context that declares them. The keys that
+sign the calls between contexts are minted and set by `bynk deploy` itself.
 
 ## License
 

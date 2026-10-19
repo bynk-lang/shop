@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Bynk version, exact ("0.330.4") or "latest"
+        description: Bynk version, exact ("0.371.3") or "latest"
         type: string
         default: latest
 
@@ -45,6 +45,4 @@ jobs:
       upstream-result: ${{ needs.e2e.result }}
       kind: example
       source: .
-      # Off until bynk-lang/bynk#1961 is fixed: `bynk deploy` rejects the
-      # events from orders to the ledger as a Service Binding cycle.
-      deploy-dry-run: false
+      deploy-dry-run: true

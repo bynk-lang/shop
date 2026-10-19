@@ -154,8 +154,8 @@ agent Catalogue {
 ---
 The calls other contexts can make. `by c: Caller` is the calling context's
 name, stamped by the compiler at the call site and carried over the Service
-Binding, so a handler can tell who is asking. These are meant for other
-contexts only; see the README for how private that is at 0.330.4.
+Binding, signed with the key the two contexts share, so a handler can tell who
+is asking and nobody else can claim to be a context.
 ---
 service restock {
 	on call(sku: Sku, qty: Quantity) -> Effect[Int] by c: Caller {

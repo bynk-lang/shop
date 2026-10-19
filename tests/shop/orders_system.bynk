@@ -1,0 +1,20 @@
+suite shop.orders as system {
+	uses shop.values
+
+	env {
+		PAYMENTS_PROCESSOR = "fake"
+	}
+
+	case "an order is placed across three Workers" {
+		let w = skuFrom("widget")
+		let _ <- api.PUT("/stock/:sku", w, StockRequest { qty: 10 }) by Admin("root")
+		let r <- api.PUT("/orders/:id", orderIdFrom("o1"), OrderLine {
+			sku: w,
+			qty: 3,
+			cents: 2500,
+		}) by Customer("alice")
+		expect r is Created(_)
+		let left <- api.GET("/stock/:sku", w) by Customer("alice")
+		expect left is Ok(Left(7))
+	}
+}
