@@ -1,7 +1,7 @@
 suite shop.orders
--- The order's state machine, driven directly. The `api` service coordinates
--- the other contexts around it; that flow is covered by orders_system.bynk
--- and e2e/scenarios.sh.
+// The order's state machine, driven directly. The `api` service coordinates
+// the other contexts around it; that flow is covered by orders_system.bynk
+// and e2e/scenarios.sh.
 
 case "a new order is pending" {
 	let v <- Order(orderIdFrom("o1")).view()
@@ -49,6 +49,31 @@ case "a rejected order cannot be cancelled" {
 	expect r is Err(_)
 	let v <- Order(id).view()
 	expect v.status == Rejected
+}
+
+case "a final order stays final: confirming or rejecting it does nothing" {
+	let cancelled = orderIdFrom("o9")
+	let _ <- Order(cancelled).open("alice", OrderLine {
+		sku: skuFrom("widget"),
+		qty: 3,
+		cents: 2500,
+	})
+	let _ <- Order(cancelled).confirm()
+	let _ <- Order(cancelled).cancel()
+	let _ <- Order(cancelled).confirm()
+	let _ <- Order(cancelled).reject()
+	let c <- Order(cancelled).view()
+	expect c.status == Cancelled
+	let rejected = orderIdFrom("o10")
+	let _ <- Order(rejected).open("alice", OrderLine {
+		sku: skuFrom("widget"),
+		qty: 3,
+		cents: 2500,
+	})
+	let _ <- Order(rejected).reject()
+	let _ <- Order(rejected).confirm()
+	let r <- Order(rejected).view()
+	expect r.status == Rejected
 }
 
 case "an order that was never placed cannot be cancelled" {

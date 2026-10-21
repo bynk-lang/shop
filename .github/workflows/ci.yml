@@ -19,7 +19,7 @@ jobs:
           persist-credentials: false
       - uses: bynk-lang/bynk-ci@v1
         with:
-          version: 0.371.3   # bump deliberately; the canary tests newer releases
+          version: 0.377.2   # bump deliberately; the canary tests newer releases
           source: .
       # The payment adapter's TypeScript binding, tested as TypeScript against
       # the out-js/ build that `bynkc test` (above) leaves behind.

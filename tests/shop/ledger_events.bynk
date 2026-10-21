@@ -1,5 +1,5 @@
 suite shop.ledger
--- The subscribers, given events as the fan-out would deliver them.
+// The subscribers, given events as the fan-out would deliver them.
 
 case "an event delivered twice is counted once" {
 	let e = OrderPlaced {

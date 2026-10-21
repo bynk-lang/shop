@@ -102,7 +102,7 @@ case "restocking registers the sku in the catalogue, once" {
 }
 
 case "the sweeper releases a hold older than fifteen minutes" {
-	-- The hold is made at the epoch; the run is scheduled sixteen minutes on.
+	// The hold is made at the epoch; the run is scheduled sixteen minutes on.
 	let _ <- restock.call(skuFrom("w11"), 10) by Caller("shop.orders")
 	let _ <- reserve.call(skuFrom("w11"), orderIdFrom("o1"), 4) by Caller("shop.orders")
 	let r <- sweeper.schedule("*/5 * * * *", 960000)
@@ -117,7 +117,7 @@ case "the sweeper leaves a fresh hold, and a sold one, alone" {
 	let _ <- reserve.call(skuFrom("w12"), orderIdFrom("fresh"), 2) by Caller("shop.orders")
 	let _ <- reserve.call(skuFrom("w12"), orderIdFrom("sold"), 3) by Caller("shop.orders")
 	let _ <- commit.call(skuFrom("w12"), orderIdFrom("sold")) by Caller("shop.orders")
-	-- Fourteen minutes on: "fresh" is not yet stale, "sold" holds nothing.
+	// Fourteen minutes on: "fresh" is not yet stale, "sold" holds nothing.
 	let r <- sweeper.schedule("*/5 * * * *", 840000)
 	expect r is Ok(_)
 	let left <- level.call(skuFrom("w12")) by Caller("shop.orders")
