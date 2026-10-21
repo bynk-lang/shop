@@ -42,7 +42,7 @@ jobs:
           # Pushes and pull requests use the pinned baseline, so a red build
           # means your change broke it. Bump it deliberately; the canary
           # passes newer releases in.
-          version: ${{ inputs.version || '0.371.3' }}
+          version: ${{ inputs.version || '0.377.2' }}
           # The fake payment processor, and the `/__scheduled` route the
           # scenarios use to run the stale-reservation sweeper on demand.
           wrangler-args: >-

@@ -138,7 +138,7 @@ bynk dev -- --var AUTH_JWT_SECRET:dev-secret \
   ```
 
 CI runs both on every push and pull request at a pinned Bynk version
-(`0.371.3`), so a red build means a change broke something. The canary runs
+(`0.377.2`), so a red build means a change broke something. The canary runs
 them at each new release; when a release breaks the shop it opens a `canary`
 issue here.
 

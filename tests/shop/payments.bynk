@@ -1,5 +1,5 @@
 suite shop.payments
--- The fake processor: what `bynk dev` and the end-to-end scenarios run with.
+// The fake processor: what `bynk dev` and the end-to-end scenarios run with.
 
 case "a charge within the limit is approved" {
 	stub Secrets.get("PAYMENTS_PROCESSOR") returns Some("fake")
@@ -20,7 +20,7 @@ case "the limit itself is approved" {
 	expect r is Ok(_)
 }
 
--- The real processor, through the `shop.gateway` adapter, stubbed at its seam.
+// The real processor, through the `shop.gateway` adapter, stubbed at its seam.
 
 case "without the fake, a charge goes to the gateway with the order as its reference" {
 	stub Gateway.authorise(_, _) returns Ok("auth_123")
@@ -59,8 +59,8 @@ case "a declined payment records nothing" {
 	expect p.status == "unknown"
 }
 
--- The processor's webhooks. At this tier the signature is given, not checked;
--- e2e/scenarios.sh signs real requests, and sends forged and stale ones.
+// The processor's webhooks. At this tier the signature is given, not checked;
+// e2e/scenarios.sh signs real requests, and sends forged and stale ones.
 
 case "a capture notice moves an authorised payment on" {
 	let _ <- Payment("auth_1").authorised("o1", 2500)

@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BYNK_VERSION: 0.371.3
+  BYNK_VERSION: 0.377.2
 
 jobs:
   plan:

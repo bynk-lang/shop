@@ -103,12 +103,25 @@ agent Order {
 		}
 	}
 
+	// `confirm` and `reject` decide an order `open` has just opened. From any
+	// other state they do nothing, so neither can move an order out of a final
+	// state, which the transitions would refuse at commit.
 	on call confirm() -> Effect[()] {
-		status := Placed
+		match status {
+			Opened => {
+				status := Placed
+			},
+			_ => (),
+		}
 	}
 
 	on call reject() -> Effect[()] {
-		status := Rejected
+		match status {
+			Opened => {
+				status := Rejected
+			},
+			_ => (),
+		}
 	}
 
 	on call cancel() -> Effect[Result[(), OrderError]] {
@@ -207,10 +220,10 @@ service api from http {
 										}
 									},
 									Ok(_) => {
-										-- `Err` means the sweeper released the hold while the payment
-										-- was being taken. The stock may already be someone else's, so
-										-- the order cannot stand. The authorisation should be voided
-										-- too; `Gateway` has no void yet, so for now it is not.
+										// `Err` means the sweeper released the hold while the payment
+										// was being taken. The stock may already be someone else's, so
+										// the order cannot stand. The authorisation should be voided
+										// too; `Gateway` has no void yet, so for now it is not.
 										let sold <- Stock.commit(body.sku, id)
 										match sold {
 											Err(_) => {
