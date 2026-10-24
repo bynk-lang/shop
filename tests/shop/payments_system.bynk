@@ -15,7 +15,11 @@ suite shop.payments as system {
 	}
 
 	case "an unsigned or forged notice is refused at the boundary" {
-		let n = WebhookEvent { id: "evt_1", event: "payment.captured", payment: "auth_unknown" }
+		let n = WebhookEvent {
+			id: "evt_1",
+			event: "payment.captured",
+			payment: "auth_unknown",
+		}
 		let none <- webhooks.POST("/webhooks/processor", n) by Nobody
 		let forged <- webhooks.POST("/webhooks/processor", n) by Forged
 		expect none is Rejected(Unauthorized)

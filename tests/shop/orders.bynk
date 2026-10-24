@@ -1,4 +1,5 @@
 suite shop.orders
+
 // The order's state machine, driven directly. The `api` service coordinates
 // the other contexts around it; that flow is covered by orders_system.bynk
 // and e2e/scenarios.sh.
@@ -11,7 +12,11 @@ case "a new order is pending" {
 
 case "opening an order records it and moves it to opened" {
 	let id = orderIdFrom("o2")
-	let line = OrderLine { sku: skuFrom("widget"), qty: 3, cents: 2500 }
+	let line = OrderLine {
+		sku: skuFrom("widget"),
+		qty: 3,
+		cents: 2500,
+	}
 	let r <- Order(id).open("alice", line)
 	expect r is Ok(_)
 	let v <- Order(id).view()
@@ -83,7 +88,11 @@ case "an order that was never placed cannot be cancelled" {
 
 case "someone else's order is not shown, nor is one never opened" {
 	let id = orderIdFrom("o7")
-	let line = OrderLine { sku: skuFrom("widget"), qty: 3, cents: 2500 }
+	let line = OrderLine {
+		sku: skuFrom("widget"),
+		qty: 3,
+		cents: 2500,
+	}
 	let _ <- Order(id).open("alice", line)
 	let o <- Order(id).view()
 	expect shown(id, o, "alice") is Some(_)

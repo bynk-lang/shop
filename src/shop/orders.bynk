@@ -31,7 +31,12 @@ event OrderPlaced = {
 	customer: String = "",
 }
 
-event OrderCancelled = { orderId: OrderId, sku: Sku, qty: Quantity, cents: Cents }
+event OrderCancelled = {
+	orderId: OrderId,
+	sku: Sku,
+	qty: Quantity,
+	cents: Cents,
+}
 
 ---
 Where an order is in its life. A new order is `Pending`; `open` moves it to
@@ -45,30 +50,41 @@ Why a placement or cancellation was refused. `TooLarge` carries the reason
 the order's total isn't a price the shop can charge; `embeds` lets `?` turn
 that `ValidationError` into an `OrderError`.
 ---
-type OrderError = | TooLarge(reason: ValidationError)
-| OutOfStock
-| PaymentDeclined
-| AlreadyDecided
-| NotPlaced
-embeds ValidationError as TooLarge
+type OrderError =
+	| TooLarge(reason: ValidationError)
+	| OutOfStock
+	| PaymentDeclined
+	| AlreadyDecided
+	| NotPlaced
+	embeds ValidationError as TooLarge
 
 ---
 What the customer is buying: one sku, how many, and the price they agreed.
 Every field is checked when the request body is read, so a zero quantity or
 an empty sku is a `400` before any handler runs.
 ---
-type OrderLine = { sku: Sku, qty: Quantity, cents: Cents }
+type OrderLine = {
+	sku: Sku,
+	qty: Quantity,
+	cents: Cents,
+}
 
 ---
 What the order comes to. The total must itself be a `Cents`, so an order over
 100,000.00 is refused before any stock is reserved or card charged.
 ---
-fn total(line: OrderLine) -> Result[Cents, OrderError] { Ok(Cents.of(line.qty * line.cents)?) }
+fn total(line: OrderLine) -> Result[Cents, OrderError] {
+	Ok(Cents.of(line.qty * line.cents)?)
+}
 
 ---
 An order as its agent holds it. `line` is `None` until the order is opened.
 ---
-type Snapshot = { status: Status, owner: String, line: Option[OrderLine] }
+type Snapshot = {
+	status: Status,
+	owner: String,
+	line: Option[OrderLine],
+}
 
 ---
 One order, keyed by the id the customer chose, so placing the same id twice
@@ -134,7 +150,13 @@ agent Order {
 		}
 	}
 
-	on call view() -> Effect[Snapshot] { Snapshot { status: status, owner: owner, line: line } }
+	on call view() -> Effect[Snapshot] {
+		Snapshot {
+			status: status,
+			owner: owner,
+			line: line,
+		}
+	}
 }
 
 type OrderView = {
@@ -146,15 +168,18 @@ type OrderView = {
 	cents: Cents,
 }
 
-type StockRequest = { qty: Quantity }
+type StockRequest = {
+	qty: Quantity,
+}
 
 ---
 Whether a product can be ordered. A visitor sees only `InStock` or
 `SoldOut`; a signed-in customer sees how many are left.
 ---
-type Availability = | InStock
-| SoldOut
-| Left(count: Int)
+type Availability =
+	| InStock
+	| SoldOut
+	| Left(count: Int)
 
 fn name(s: Status) -> String {
 	match s {

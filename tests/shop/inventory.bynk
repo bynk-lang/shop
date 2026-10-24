@@ -1,4 +1,5 @@
 suite shop.inventory
+
 case "stock starts at zero and restocking adds to it" {
 	let before <- Inventory(skuFrom("w1")).level()
 	expect before == 0
@@ -135,7 +136,11 @@ case "a delivery from the queue is stocked, and the sweeper can find it" {
 }
 
 case "a delivery that arrives twice is stocked once" {
-	let d = Delivery { id: "d2", sku: skuFrom("w14"), qty: 6 }
+	let d = Delivery {
+		id: "d2",
+		sku: skuFrom("w14"),
+		qty: 6,
+	}
 	let _ <- deliveries.message(d)
 	let _ <- deliveries.message(d)
 	let left <- Inventory(skuFrom("w14")).level()

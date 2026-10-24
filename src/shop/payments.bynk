@@ -69,7 +69,10 @@ type PaymentStatus = enum { Unknown, Authorised, Captured, Refunded, Failed }
 ---
 One webhook notice, as the payment's history keeps it.
 ---
-type Notice = { id: String, event: String }
+type Notice = {
+	id: String,
+	event: String,
+}
 
 ---
 Why a notice was not applied: it does not follow from the payment's status
@@ -115,11 +118,19 @@ agent Payment {
 	}
 
 	on call view() -> Effect[PaymentView] {
-		PaymentView { status: label(status), order: order, cents: cents }
+		PaymentView {
+			status: label(status),
+			order: order,
+			cents: cents,
+		}
 	}
 }
 
-type PaymentView = { status: String, order: String, cents: Int }
+type PaymentView = {
+	status: String,
+	order: String,
+	cents: Int,
+}
 
 ---
 The processor's events, and the status each one leads to.
@@ -190,7 +201,11 @@ actor ProcessorHook {
 A webhook event, as the processor sends it: its own id, what happened, and the
 authorisation it happened to.
 ---
-type WebhookEvent = { id: String, event: String, payment: String }
+type WebhookEvent = {
+	id: String,
+	event: String,
+	payment: String,
+}
 
 service webhooks from http {
 	on POST("/webhooks/processor") (

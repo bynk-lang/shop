@@ -10,7 +10,11 @@ actor Staff { auth = Bearer(secret = "AUTH_JWT_SECRET"), identity = StaffId }
 
 actor Admin = Staff where hasClaim("admin")
 
-type Totals = { orders: Int, units: Int, cents: Int }
+type Totals = {
+	orders: Int,
+	units: Int,
+	cents: Int,
+}
 
 ---
 The books: how many orders are standing, and for how much. One instance, since
@@ -39,7 +43,13 @@ agent Books {
 		let _ <- cents.update((v) => v - amount)
 	}
 
-	on call totals() -> Effect[Totals] { Totals { orders: orders, units: units, cents: cents } }
+	on call totals() -> Effect[Totals] {
+		Totals {
+			orders: orders,
+			units: units,
+			cents: cents,
+		}
+	}
 }
 
 service OnPlaced from Events(OrderPlaced) {

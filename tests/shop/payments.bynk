@@ -1,4 +1,5 @@
 suite shop.payments
+
 // The fake processor: what `bynk dev` and the end-to-end scenarios run with.
 
 case "a charge within the limit is approved" {
@@ -74,7 +75,10 @@ case "a capture notice moves an authorised payment on" {
 
 case "a notice delivered twice is applied once" {
 	let _ <- Payment("auth_1").authorised("o1", 2500)
-	let n = Notice { id: "evt_1", event: "payment.captured" }
+	let n = Notice {
+		id: "evt_1",
+		event: "payment.captured",
+	}
 	let first <- Payment("auth_1").notify(n)
 	expect first is Ok(Captured)
 	let again <- Payment("auth_1").notify(n)

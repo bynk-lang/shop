@@ -28,13 +28,17 @@ The order id as plain text, for the payment processor, which knows nothing of
 the shop's types, and as a map key (see `skuRef`). Only this commons can read
 an `OrderId`'s string.
 ---
-fn orderRef(id: OrderId) -> String { id.raw }
+fn orderRef(id: OrderId) -> String {
+	id.raw
+}
 
 ---
 The sku as plain text, for a map key. The shop keys its maps by text and keeps
 the opaque value inside the entry.
 ---
-fn skuRef(s: Sku) -> String { s.raw }
+fn skuRef(s: Sku) -> String {
+	s.raw
+}
 
 ---
 Non-empty text: what a `Sku` or an `OrderId` is made of.
@@ -46,9 +50,13 @@ A sku from text already known to be non-empty, so no `Result` is needed. A
 literal is checked when it is compiled: `skuFrom("")` is refused. The commons
 may use `.unsafe` here because `Label` has already established the predicate.
 ---
-fn skuFrom(text: Label) -> Sku { Sku.unsafe(text) }
+fn skuFrom(text: Label) -> Sku {
+	Sku.unsafe(text)
+}
 
 ---
 An order id from non-empty text, as `skuFrom`.
 ---
-fn orderIdFrom(text: Label) -> OrderId { OrderId.unsafe(text) }
+fn orderIdFrom(text: Label) -> OrderId {
+	OrderId.unsafe(text)
+}
