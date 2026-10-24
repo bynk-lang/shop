@@ -3,3 +3,4 @@ out/
 out-js/
 node_modules/
 .wrangler/
+.claude/worktrees/
