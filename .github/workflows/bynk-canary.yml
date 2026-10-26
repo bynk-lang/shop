@@ -46,3 +46,5 @@ jobs:
       kind: example
       source: .
       deploy-dry-run: true
+      bump: true            # propose moving BYNK_VERSION to a newer release that passes
+    secrets: inherit        # the bump App's BUMP_APP_ID and BUMP_APP_KEY

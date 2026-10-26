@@ -9,6 +9,8 @@
 #   PAYMENTS_WEBHOOK_SECRET the key the processor signs its webhooks with
 # PAYMENTS_API_URL is optional: set it to point the gateway at a sandbox.
 # Until they do, the deploy job warns and skips rather than failing main.
+# A deploy that changes bynk.deploy.lock opens a pull request committing it,
+# through the org's bump App. The Bynk version is the one in BYNK_VERSION.
 name: Deploy
 
 on:
@@ -24,9 +26,6 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  BYNK_VERSION: 0.377.2
-
 jobs:
   plan:
     name: Plan (dry run)
@@ -38,7 +37,7 @@ jobs:
           persist-credentials: false
       - uses: bynk-lang/bynk-deploy@v2
         with:
-          version: ${{ env.BYNK_VERSION }}
+          version-file: BYNK_VERSION
           dry-run: "true"
           plan-format: text
 
@@ -73,6 +72,20 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # The bump App's token, so bynk-deploy can open the pull request that
+      # commits a changed bynk.deploy.lock (GITHUB_TOKEN may not open one).
+      # Without it, the lock is kept as an artifact to commit by hand.
+      - name: Mint the lock pull request token
+        id: app-token
+        if: steps.secrets.outputs.configured == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.BUMP_APP_ID }}
+          private-key: ${{ secrets.BUMP_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Deploy
         id: deploy
         if: steps.secrets.outputs.configured == 'true'
@@ -85,9 +98,10 @@ jobs:
           AUTH_JWT_SECRET: ${{ secrets.AUTH_JWT_SECRET }}
           PAYMENTS_WEBHOOK_SECRET: ${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
         with:
-          version: ${{ env.BYNK_VERSION }}
+          version-file: BYNK_VERSION
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          lock-pr-token: ${{ steps.app-token.outputs.token }}
 
       # The gateway's key. The plan can't see that the gateway's TypeScript
       # binding reads it (it says payments' secrets are incomplete), and a
@@ -100,17 +114,17 @@ jobs:
         env:
           PAYMENTS_WEBHOOK_SECRET: ${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
         with:
-          version: ${{ env.BYNK_VERSION }}
+          version-file: BYNK_VERSION
           context: shop.payments
           cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           secrets: |
             PAYMENTS_API_KEY=${{ secrets.PAYMENTS_API_KEY }}
 
-      # The action never commits. When the deploy changes bynk.deploy.lock (the
-      # first deploy records the context), keep the new file to commit.
+      # When the deploy changed bynk.deploy.lock but no pull request could be
+      # opened for it (no App token), keep the new file to commit by hand.
       - name: Keep the changed bynk.deploy.lock
-        if: always() && steps.deploy.outputs.lock-changed == 'true'
+        if: always() && steps.deploy.outputs.lock-changed == 'true' && steps.deploy.outputs.lock-pr == ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bynk.deploy.lock
