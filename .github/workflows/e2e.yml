@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Bynk version to test, exact or "latest" (empty for the pinned baseline)
+        description: Bynk version to test, exact or "latest" (empty for BYNK_VERSION)
         type: string
         default: ""
   # bynk-canary.yml calls this at each new Bynk release, so the scenarios
@@ -17,7 +17,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: Bynk version to test, exact or "latest" (empty for the pinned baseline)
+        description: Bynk version to test, exact or "latest" (empty for BYNK_VERSION)
         type: string
         default: ""
 
@@ -39,10 +39,11 @@ jobs:
           persist-credentials: false
       - uses: bynk-lang/bynk-dev@v1
         with:
-          # Pushes and pull requests use the pinned baseline, so a red build
-          # means your change broke it. Bump it deliberately; the canary
-          # passes newer releases in.
-          version: ${{ inputs.version || '0.377.2' }}
+          # Pushes and pull requests use BYNK_VERSION, so a red build means
+          # your change broke it. The canary passes newer releases in, and
+          # proposes moving BYNK_VERSION once one passes.
+          version: ${{ inputs.version }}
+          version-file: ${{ !inputs.version && 'BYNK_VERSION' || '' }}
           # The fake payment processor, and the `/__scheduled` route the
           # scenarios use to run the stale-reservation sweeper on demand.
           wrangler-args: >-

@@ -137,10 +137,11 @@ bynk dev -- --var AUTH_JWT_SECRET:dev-secret \
     ./e2e/scenarios.sh
   ```
 
-CI runs both on every push and pull request at a pinned Bynk version
-(`0.377.2`), so a red build means a change broke something. The canary runs
-them at each new release; when a release breaks the shop it opens a `canary`
-issue here.
+CI runs both on every push and pull request at the Bynk version in
+[`BYNK_VERSION`](BYNK_VERSION), so a red build means a change broke something.
+The canary runs them at each new release. When a release breaks the shop it
+opens a `canary` issue here; when a newer release passes, it opens a pull
+request moving `BYNK_VERSION` to it.
 
 ## What Bynk can't do for this yet
 
