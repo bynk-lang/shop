@@ -14,7 +14,7 @@ const outJs = path.join(__dirname, "..", "..", "out-js");
 const { HttpGateway } = require(path.join(outJs, "shop", "gateway.binding.js"));
 const { GatewayError } = require(path.join(outJs, "shop", "gateway.js"));
 const { Method, FetchError } = require(path.join(outJs, "bynk.js"));
-const { Ok, Err, Some, None } = require(path.join(outJs, "runtime.js"));
+const { Ok, Err, Some, None } = require(path.join(outJs, "__bynk_runtime", "result.js"));
 
 // A gateway over fake capabilities: `secrets` is the environment, `answer` is
 // what the network does with a request. `sent` records every request.
