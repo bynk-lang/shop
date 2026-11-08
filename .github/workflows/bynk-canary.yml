@@ -39,7 +39,7 @@ jobs:
     name: Canary
     needs: e2e
     if: ${{ !cancelled() }}
-    uses: bynk-lang/.github/.github/workflows/canary.yml@2135c7964643927a96f10862e380eb7e7e3fd3f1 # v1
+    uses: bynk-lang/.github/.github/workflows/canary.yml@e557c04b8ff56efa12feafa2182795001e6613ae # v1
     with:
       version: ${{ github.event.client_payload.version || inputs.version || 'latest' }}
       upstream-result: ${{ needs.e2e.result }}
@@ -50,7 +50,7 @@ jobs:
       # canary.yml takes its scripts from this ref of bynk-lang/.github, so it
       # names the same commit as `uses:` above. Dependabot moves `uses:` only:
       # move this to the same commit in that pull request.
-      canary-ref: 2135c7964643927a96f10862e380eb7e7e3fd3f1
+      canary-ref: e557c04b8ff56efa12feafa2182795001e6613ae
     # Only the bump App's two secrets (organisation secrets), not
     # `secrets: inherit`, which would pass every secret this repository has.
     secrets:
