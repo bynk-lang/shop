@@ -91,8 +91,8 @@ processor cannot be asked.
 ## Run it
 
 ```sh
-bynkc test .                                       # unit tests
-node --test tests/bindings/*.test.cjs              # the adapter's binding, after bynkc test
+bynk test .                                       # unit tests
+node --test tests/bindings/*.test.cjs              # the adapter's binding, after bynk test
 bynk dev -- --var AUTH_JWT_SECRET:dev-secret \
   --var PAYMENTS_PROCESSOR:fake --var PAYMENTS_WEBHOOK_SECRET:dev-hook \
   --test-scheduled                                 # all four contexts, wired
