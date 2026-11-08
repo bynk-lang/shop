@@ -22,6 +22,6 @@ jobs:
           version-file: BYNK_VERSION   # the canary proposes moving it
           source: .
       # The payment adapter's TypeScript binding, tested as TypeScript against
-      # the out-js/ build that `bynkc test` (above) leaves behind.
+      # the out-js/ build that `bynk test` (above) leaves behind.
       - name: Binding tests
         run: node --test tests/bindings/*.test.cjs
