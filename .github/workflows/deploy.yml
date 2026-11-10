@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: bynk-lang/bynk-deploy@v2
+      - uses: bynk-lang/bynk-deploy@422b47aeb37ba7ad0d8ba1f87755ae7e422dc462 # v2.2.2
         with:
           version-file: BYNK_VERSION
           dry-run: "true"
@@ -89,7 +89,7 @@ jobs:
       - name: Deploy
         id: deploy
         if: steps.secrets.outputs.configured == 'true'
-        uses: bynk-lang/bynk-deploy@v2
+        uses: bynk-lang/bynk-deploy@422b47aeb37ba7ad0d8ba1f87755ae7e422dc462 # v2.2.2
         # Declared secrets (an actor's `auth` secret) are read from the
         # environment and set only on the context whose actor declares them:
         # AUTH_JWT_SECRET on orders, PAYMENTS_WEBHOOK_SECRET on payments.
@@ -110,7 +110,7 @@ jobs:
       # Leaving PAYMENTS_PROCESSOR unset is what selects the real processor.
       - name: Set the payment processor's key
         if: steps.secrets.outputs.configured == 'true'
-        uses: bynk-lang/bynk-deploy@v2
+        uses: bynk-lang/bynk-deploy@422b47aeb37ba7ad0d8ba1f87755ae7e422dc462 # v2.2.2
         env:
           PAYMENTS_WEBHOOK_SECRET: ${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
         with:

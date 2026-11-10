@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: bynk-lang/bynk-dev@v1
+      - uses: bynk-lang/bynk-dev@ea406243fa3d07c1ab289eb6d1284927fd4ed67a # v1.4.2
         with:
           # Pushes and pull requests use BYNK_VERSION, so a red build means
           # your change broke it. The canary passes newer releases in, and
