@@ -2,7 +2,7 @@ context shop.ledger
 
 uses shop.values
 consumes shop.orders
-consumes bynk { Idempotency }
+consumes bynk { Claim, Idempotency }
 
 type StaffId = String where NonEmpty
 
@@ -20,9 +20,11 @@ type Totals = {
 The books: how many orders are standing, and for how much. One instance, since
 the totals are one number each.
 
-Events are delivered at least once, so each handler asks `Idempotency` whether
-it has seen this event id before it counts it again. An event carries the unit
-price, so the amount an order adds to the books is `qty * cents`.
+Events are delivered at least once, so each handler claims its event id with
+`Idempotency` before it counts the event, and a repeat delivery is ignored. The
+claim lasts seven days and is released if the handler fails, so a retry is
+still counted. An event carries the unit price, so the amount an order adds to
+the books is `qty * cents`.
 ---
 agent Books {
 	key id: String
@@ -54,27 +56,15 @@ agent Books {
 
 service OnPlaced from Events(OrderPlaced) {
 	on event(e: OrderPlaced, env: EventEnvelope) -> Effect[()] given Idempotency {
-		let seen <- Idempotency.dedup[()](env.eventId)
-		match seen {
-			Some(_) => (),
-			None => {
-				let _ <- Books("main").placed(e.qty, e.qty * e.cents)
-				let _ <- Idempotency.remember[()](env.eventId, (), 7.days)
-			},
-		}
+		let Claim.Claimed <- Idempotency.claim(env.eventId, 7.days) else { () }
+		let _ <- Books("main").placed(e.qty, e.qty * e.cents)
 	}
 }
 
 service OnCancelled from Events(OrderCancelled) {
 	on event(e: OrderCancelled, env: EventEnvelope) -> Effect[()] given Idempotency {
-		let seen <- Idempotency.dedup[()](env.eventId)
-		match seen {
-			Some(_) => (),
-			None => {
-				let _ <- Books("main").cancelled(e.qty, e.qty * e.cents)
-				let _ <- Idempotency.remember[()](env.eventId, (), 7.days)
-			},
-		}
+		let Claim.Claimed <- Idempotency.claim(env.eventId, 7.days) else { () }
+		let _ <- Books("main").cancelled(e.qty, e.qty * e.cents)
 	}
 }
 
