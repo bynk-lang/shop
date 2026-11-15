@@ -2,7 +2,7 @@ context shop.ledger
 
 uses shop.values
 consumes shop.orders
-consumes bynk { Claim, Idempotency }
+consumes bynk { Claim, Idempotency, EventEnvelope }
 
 type StaffId = String where NonEmpty
 

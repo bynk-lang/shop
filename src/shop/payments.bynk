@@ -1,7 +1,7 @@
 context shop.payments
 
 uses shop.values
-consumes shop.gateway { Gateway }
+consumes shop.gateway { Gateway, GatewayError }
 consumes bynk { Clock, Logger, Secrets }
 exports transparent { PayError }
 

@@ -1,5 +1,8 @@
 suite shop.payments
 
+consumes shop.gateway { GatewayError, Gateway }
+consumes bynk { Secrets }
+
 // The fake processor: what `bynk dev` and the end-to-end scenarios run with.
 
 case "a charge within the limit is approved" {
