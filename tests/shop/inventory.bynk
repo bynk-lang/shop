@@ -1,5 +1,7 @@
 suite shop.inventory
 
+consumes bynk { Clock }
+
 case "stock starts at zero and restocking adds to it" {
 	let before <- Inventory(skuFrom("w1")).level()
 	expect before == 0
