@@ -239,8 +239,8 @@ type Delivery = {
 ---
 The warehouse's system announces each delivery on a Cloudflare Queue. The queue
 delivers at least once and retries a message that fails, so the inventory
-counts a delivery by its id and never stocks it twice. Bynk can't send to a
-queue yet, so the producer is the warehouse's own Worker.
+counts a delivery by its id and never stocks it twice. The producer is the
+warehouse's own Worker, so nothing in this repository sends to the queue.
 ---
 service deliveries from queue("stock-deliveries") {
 	on message(d: Delivery) -> Effect[QueueResult] {

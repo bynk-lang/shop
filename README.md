@@ -116,7 +116,10 @@ bynk dev -- --var AUTH_JWT_SECRET:dev-secret \
   and the sweeper (with a stubbed `Clock` and a scheduled time), every
   transition of the order's state machine, the fake processor's limit, the
   real path with `Gateway` stubbed, and the payment's webhook transitions and
-  replay guard.
+  replay guard. The warehouse's deliveries are tested with
+  `deliveries.message(…)`: `stock-deliveries` is fed by the warehouse's own
+  Worker, so nothing in this repository sends to it, and the end-to-end
+  scenarios don't cover it.
 - **Binding tests** ([`tests/bindings`](tests/bindings)) test the adapter's
   TypeScript binding as TypeScript, with Node's test runner, against fake
   `Fetch` and `Secrets`: the request it sends, and how it reads each answer.
@@ -161,10 +164,6 @@ history has them.)
 - **The gateway can't void an authorisation yet.** If the sweeper releases a
   hold while its payment is being taken, the order is rejected but the
   authorisation stands until the processor lets it lapse.
-- **Bynk can't send to a queue.** Producing queue messages isn't a first-party
-  capability, so `stock-deliveries` is fed by the warehouse's own Worker, and
-  nothing in this repository can put a message on it under `bynk dev`. The
-  consumer is tested with `deliveries.message(…)`.
 - **The sweeper visits every sku.** Durable Objects can't be listed, so a
   `Catalogue` agent records each sku that has been stocked, and every run asks
   each one for its stale holds. That is fine at this size; a large catalogue
